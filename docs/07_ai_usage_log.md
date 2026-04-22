@@ -100,6 +100,25 @@ Notes:
 - camera capture, SCCB, filters, and XDC changes remained out of scope for TASK-002
 - next active milestone is TASK-003 basic filters
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned and implemented TASK-004 SCCB master
+- drafted the write-only SCCB transaction FSM and self-checking testbench
+- removed the obsolete empty SCCB testbench placeholder
+- verified ACK success and ACK failure behavior with Icarus Verilog
+Files affected:
+- `rtl/camera/ov7670_sccb_master.v`
+- `sim/tb/tb_ov7670_sccb_master.sv`
+- `docs/tasks/TASK-004-sccb-master.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- simulation output was checked before recording the task as complete
+Notes:
+- camera register ROM, full camera initialization, pixel capture, framebuffer writes, and top-level wiring remained out of scope for TASK-004
+
 ## Future logging examples
 
 ### Example for RTL generation

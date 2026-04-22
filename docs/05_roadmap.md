@@ -86,6 +86,10 @@ Success criteria:
 - `tb_video_filter_basic.sv` exists and checks all filter modes
 
 ## Milestone 4 — SCCB master
+Status:
+- Complete as of 2026-04-22.
+- Simulation passed for SCCB write transactions, ACK success, and ACK failure with clean STOP termination.
+
 Goal:
 - implement the low-level camera configuration transport
 
@@ -96,7 +100,7 @@ Scope:
 - busy / done interface
 
 Success criteria:
-- `tb_sccb_master.sv` verifies one or more register-write transactions
+- `tb_ov7670_sccb_master.sv` verifies one or more register-write transactions
 
 ## Milestone 5 — OV7670 init sequence
 Goal:

@@ -564,7 +564,7 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - `tb_vga_timing.sv`
 - `tb_vga_reader_320x240.sv`
 - `tb_video_filter_basic.sv`
-- `tb_sccb_master.sv`
+- `tb_ov7670_sccb_master.sv`
 - `tb_ov7670_init.sv`
 - `tb_ov7670_capture.sv`
 
@@ -741,12 +741,12 @@ That will make final reporting much easier and safer.
 - [ ] grayscale filter works
 - [ ] negative filter works
 - [ ] threshold filter works
-- [ ] SCCB master works
+- [x] SCCB master works in simulation
 - [ ] OV7670 init sequence works
 - [ ] camera capture works
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules (VGA timing and VGA reader/address mapping done; filters, SCCB, camera init, and capture pending)
+- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, and SCCB done; filters, camera init, and capture pending)
 - [ ] final block diagram and report materials are prepared
 
 ---

@@ -1,7 +1,25 @@
 # TASK-004 — SCCB Master
 
 ## Status
-Planned
+Complete / simulation passed.
+
+Date completed: 2026-04-22
+
+Verified behavior:
+- `ov7670_sccb_master.v` implements a write-only SCCB transaction engine.
+- The master emits START, three MSB-first byte phases, ACK phases, STOP, and a one-cycle completion pulse.
+- ACK failure stops additional byte transmission, executes the normal STOP sequence, and reports `ack_error`.
+
+Verification:
+- `tb_ov7670_sccb_master.sv` passed with Icarus Verilog using `-g2012`.
+- Simulation covered ACK success and ACK failure with clean termination.
+- VCD output is generated at `sim/run/tb_ov7670_sccb_master.vcd`.
+
+Scope note:
+- Camera register ROM, full OV7670 init sequencing, pixel capture, framebuffer writes, and top-level hardware integration remain out of scope.
+
+Next task:
+- `TASK-005-ov7670-init.md`
 
 ## Purpose
 Implement a reusable **SCCB write master** for the OV7670 camera module.
@@ -116,6 +134,7 @@ Use a simple transaction-style interface.
 - `dev_addr[7:0]`
 - `reg_addr[7:0]`
 - `reg_data[7:0]`
+- `siod_in`
 
 ### Outputs
 - `busy`
@@ -124,7 +143,6 @@ Use a simple transaction-style interface.
 - `sioc`
 - `siod_oe`
 - `siod_out`
-- `siod_in`
 
 Recommended interpretation:
 - `sioc` is the SCCB serial clock output
