@@ -119,6 +119,23 @@ Human review performed:
 Notes:
 - camera register ROM, full camera initialization, pixel capture, framebuffer writes, and top-level wiring remained out of scope for TASK-004
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned and implemented TASK-005 OV7670 initialization
+- drafted the register ROM, init FSM, and fake-SCCB self-checking testbench
+- verified successful register sequencing and injected SCCB failure handling with Icarus Verilog
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `rtl/camera/ov7670_init.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- simulation output was checked before recording the task as complete
+Notes:
+- pixel capture, framebuffer writes, live VGA display integration, and top-level LED wiring remained out of scope for TASK-005
+
 ## Future logging examples
 
 ### Example for RTL generation

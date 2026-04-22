@@ -103,6 +103,11 @@ Success criteria:
 - `tb_ov7670_sccb_master.sv` verifies one or more register-write transactions
 
 ## Milestone 5 — OV7670 init sequence
+Status:
+- Complete as of 2026-04-22.
+- Simulation passed for register ROM sequencing, startup gating, post-soft-reset delay, ACK failure handling, and sticky done/error status.
+- Hardware debug LED validation has not been recorded yet and remains optional for this milestone.
+
 Goal:
 - configure camera into the chosen baseline mode
 

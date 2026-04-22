@@ -1,7 +1,28 @@
 # TASK-005 — OV7670 Initialization
 
 ## Status
-Planned
+Complete / simulation passed.
+
+Date completed: 2026-04-22
+
+Verified behavior:
+- `ov7670_reg_rom.v` exposes a deterministic 12-entry conservative QVGA RGB565 startup table.
+- Invalid ROM indices return the final valid entry with `is_last=1`.
+- `ov7670_init.v` waits for startup delay and explicit `start_init` before issuing SCCB traffic.
+- The init FSM emits one `sccb_start` pulse per ROM entry and holds transaction fields stable while SCCB is busy.
+- The FSM waits `POST_RESET_DELAY_CLKS` after the `12/80` soft-reset write.
+- `init_done` and `init_error` are sticky until reset, and failures stop ROM advancement.
+
+Verification:
+- `tb_ov7670_init.sv` passed with Icarus Verilog using `-g2012`.
+- Simulation covered full successful initialization and injected SCCB ACK failure.
+- VCD output is generated at `sim/run/tb_ov7670_init.vcd`.
+
+Scope note:
+- Pixel capture, framebuffer writes, live VGA display integration, and top-level LED wiring remain out of scope.
+
+Next task:
+- `TASK-006-camera-capture.md`
 
 ## Purpose
 Implement the **OV7670 camera initialization layer** that uses the SCCB master from TASK-004 to program the camera with a known-good startup register sequence.

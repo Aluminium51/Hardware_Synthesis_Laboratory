@@ -532,8 +532,9 @@ Implement:
 - init FSM
 
 Success condition:
-- camera reaches initialized state
-- debug LEDs show success
+- SCCB master works in simulation
+- OV7670 init ROM/FSM completes in simulation with explicit done/error handling
+- hardware LED validation and live camera output are not proven yet
 
 ## Stage 5 — Camera capture
 Implement:
@@ -742,11 +743,11 @@ That will make final reporting much easier and safer.
 - [ ] negative filter works
 - [ ] threshold filter works
 - [x] SCCB master works in simulation
-- [ ] OV7670 init sequence works
+- [x] OV7670 init sequence works in simulation
 - [ ] camera capture works
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, and SCCB done; filters, camera init, and capture pending)
+- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, SCCB master, and camera init done; filters and capture pending)
 - [ ] final block diagram and report materials are prepared
 
 ---
