@@ -123,8 +123,13 @@ Success criteria:
 - `tb_ov7670_init.sv` exists
 
 ## Milestone 6 — camera capture path
+Status:
+- Complete as of 2026-04-22.
+- Simulation passed for OV7670 RGB565 byte assembly, RGB444 conversion, frame/line handling, incomplete byte suppression, and address-cap behavior.
+- Live camera-to-framebuffer integration has not been performed yet; that remains in Milestone 7.
+
 Goal:
-- capture live camera pixels into the framebuffer
+- provide a verified camera-domain capture producer for framebuffer writes
 
 Scope:
 - camera byte sampling in `cam_pclk` domain
@@ -136,7 +141,7 @@ Scope:
 Success criteria:
 - `tb_ov7670_capture.sv` exists
 - simulation shows correct two-byte pixel assembly and write behavior
-- live image appears, even if orientation or colors need adjustment
+- stable `wr_en`, `wr_addr`, `wr_data`, `frame_done`, and `frame_active` interface is ready for integration
 
 ## Milestone 7 — full baseline integration
 Goal:

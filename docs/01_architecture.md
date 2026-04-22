@@ -142,8 +142,13 @@ Responsibilities:
 - sample camera bytes in the camera pixel-clock domain
 - assemble one RGB565 pixel from two bytes
 - convert RGB565 to RGB444
-- generate framebuffer write address and write enable
-- reset write pointer at frame boundary
+- generate `wr_en`, `wr_addr[16:0]`, and `wr_data[11:0]` for the framebuffer write port
+- expose `frame_done` and `frame_active` status for later integration/debug logic
+- reset the write pointer at the active-high `VSYNC` frame boundary
+- suppress writes during `VSYNC` and after the final framebuffer address until the next frame
+
+Verification:
+- TASK-006 simulation passed for byte assembly, RGB444 conversion, frame/line guard behavior, and address-cap handling.
 
 ## Utility
 ### `rtl/util/debounce.v`

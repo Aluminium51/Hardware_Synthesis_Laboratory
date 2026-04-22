@@ -136,6 +136,26 @@ Human review performed:
 Notes:
 - pixel capture, framebuffer writes, live VGA display integration, and top-level LED wiring remained out of scope for TASK-005
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned and implemented TASK-006 OV7670 RGB565 camera capture
+- drafted the pclk-domain byte assembly, RGB444 conversion, framebuffer write-side control, and self-checking capture testbench
+- cleaned TASK-006 and project docs so the implemented stable interface is recorded accurately
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565.v`
+- `sim/tb/tb_ov7670_capture.sv`
+- `docs/tasks/TASK-006-camera-capture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- simulation output was checked before recording the task as complete
+Notes:
+- full top-level live camera integration, hardware capture validation, and color/orientation tuning remain out of scope for TASK-006
+
 ## Future logging examples
 
 ### Example for RTL generation

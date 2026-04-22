@@ -479,7 +479,13 @@ Register/value table for camera init.
 FSM that walks the register table and programs the camera.
 
 ### `ov7670_capture_rgb565.v`
-Captures two bytes per pixel from the OV7670, converts RGB565 to RGB444, and writes to the framebuffer.
+Captures two bytes per pixel from the OV7670 in the camera `pclk` domain, converts RGB565 to RGB444, and emits framebuffer write-side signals.
+
+Stable TASK-006 interface:
+- inputs: `pclk`, `rst`, `vsync`, `href`, `cam_d[7:0]`
+- outputs: `wr_en`, `wr_addr[16:0]`, `wr_data[11:0]`, `frame_done`, `frame_active`
+
+TASK-006 is simulation-verified as a module-level capture block. It has not yet been wired into the top-level framebuffer path for live display.
 
 ---
 
@@ -543,7 +549,11 @@ Implement:
 - framebuffer writes
 
 Success condition:
-- recognizably correct live image appears
+- module-level simulation proves byte assembly, write pulses, address progression, frame-boundary handling, and overflow suppression
+
+Status:
+- Complete as of 2026-04-22 for the standalone capture block.
+- Live camera display remains part of the integration stage.
 
 ## Stage 6 — Integration cleanup
 Fix:
@@ -599,6 +609,8 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - write enable pulses at the right time
 - address increments correctly
 - frame reset behavior works
+- `frame_done` and `frame_active` behave as defined for integration
+- writes are suppressed during `VSYNC` and after the address cap
 
 ---
 
@@ -744,10 +756,11 @@ That will make final reporting much easier and safer.
 - [ ] threshold filter works
 - [x] SCCB master works in simulation
 - [x] OV7670 init sequence works in simulation
-- [ ] camera capture works
+- [x] camera capture module works in simulation
+- [ ] camera capture is integrated into the top-level framebuffer path
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, SCCB master, and camera init done; filters and capture pending)
+- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, SCCB master, camera init, and camera capture done; filters pending)
 - [ ] final block diagram and report materials are prepared
 
 ---

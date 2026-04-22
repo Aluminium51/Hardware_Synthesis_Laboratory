@@ -1,7 +1,32 @@
 # TASK-006 — Camera Capture Path
 
 ## Status
-Planned
+Complete / simulation passed.
+
+Date completed: 2026-04-22
+
+Implemented behavior:
+- `ov7670_capture_rgb565.v` captures OV7670 RGB565 bytes in the `pclk` domain only.
+- RGB565 is assembled MSB byte first and converted to RGB444 by truncation.
+- `wr_en`, `wr_addr`, and `wr_data` are emitted as a clean framebuffer write-side interface.
+- `wr_addr` holds when no write occurs and accepted writes are addressed linearly from zero.
+- `VSYNC` is treated as an active-high frame-boundary signal for the baseline simulation model.
+- `frame_done` is a one-`pclk` pulse on a `VSYNC` frame-boundary event that terminates a frame with at least one completed pixel.
+- `frame_active` asserts after the first valid byte activity of a frame and clears on `VSYNC`.
+- `wr_en` is forced low on cycles sampled with `VSYNC=1`.
+- Incomplete byte pairs are cleared at line/frame boundaries and never produce writes.
+- Address overflow is handled by suppressing writes after the final framebuffer address until the next frame boundary.
+
+Verification:
+- `tb_ov7670_capture.sv` passed with Icarus Verilog using `-g2012`.
+- Simulation covered short valid line capture, line gaps, frame-boundary reset, incomplete byte-pair suppression, explicit `frame_active` behavior, `wr_en=0` during `VSYNC`, `wr_addr` hold behavior, and address-cap suppression.
+- VCD output is generated at `sim/run/tb_ov7670_capture.vcd`.
+
+Scope note:
+- This task does not wire camera capture into the top level or framebuffer instance. That remains for TASK-007 full integration.
+
+Next task:
+- `TASK-007-top-integration.md`
 
 ## Purpose
 Implement the OV7670 pixel-capture path that converts the camera's parallel RGB565 stream into framebuffer-compatible RGB444 write transactions.
@@ -84,13 +109,7 @@ sim/tb/tb_ov7670_capture.sv
 docs/tasks/TASK-006-camera-capture.md
 ```
 
-Optional helper file if useful:
-
-```text
-rtl/util/edge_detect.v
-```
-
-but avoid extra files unless they clearly improve readability.
+No helper RTL files were added for the completed baseline.
 
 ---
 
@@ -114,15 +133,11 @@ but avoid extra files unless they clearly improve readability.
 - `wr_data[11:0]`
 - `frame_done`
 - `frame_active`
-- `capture_error` (optional, if the implementation wants an explicit error/debug flag)
 
-### Recommended debug outputs
-If useful for simulation/debug only:
-- `byte_phase`
-- `x_count[8:0]`
-- `y_count[7:0]`
-
-Do not require these in the final stable interface unless they clearly help later integration.
+### Non-interface notes
+- `capture_error` was not implemented for TASK-006.
+- No debug-only outputs are exposed as stable ports.
+- Internal signals such as `byte_phase` may still be inspected hierarchically in simulation if needed.
 
 ---
 
@@ -134,23 +149,25 @@ When `rst=1`:
 - `wr_addr = 0`
 - `wr_data = 0`
 - internal byte assembly state resets
-- line/frame counters reset
+- internal frame tracking state resets
 - `frame_done = 0`
 - `frame_active = 0`
 
 ## Frame boundary handling
 Use `VSYNC` as the frame boundary indicator.
 
-Recommended policy:
-- when a new frame boundary is observed, reset write address and line/pixel assembly state
-- begin filling the next frame from address `0`
+Implemented baseline policy:
+- `VSYNC` is treated as active-high.
+- a rising `VSYNC` frame-boundary event resets the write pointer and byte assembly state
+- `wr_en` is forced low on every `pclk` cycle sampled with `VSYNC=1`
+- the next captured frame begins filling from address `0`
 
-The exact polarity can be adapted later if needed for the selected register configuration, but the baseline capture logic should assume one clean frame-boundary event source from `VSYNC`.
+The exact polarity can be adapted later if needed for the selected register configuration, but TASK-006 simulation uses this active-high baseline.
 
 ## Line validity
 Use `HREF` as “valid pixel bytes on this line.”
 
-Recommended policy:
+Implemented policy:
 - only assemble/write pixel data while `href=1`
 - when `href=0`, do not consume bytes into pixels
 - leaving a line should reset any incomplete half-pixel state
@@ -158,7 +175,7 @@ Recommended policy:
 ## Pixel assembly
 In RGB565 mode, one output pixel is formed from two consecutive 8-bit transfers. The OV7670 documentation provides RGB565 timing/byte formatting for this packed 8-bit bus mode. citeturn200834search0turn200834search1
 
-Recommended policy:
+Implemented policy:
 - `byte_phase = 0`: latch first byte
 - `byte_phase = 1`: latch second byte, combine into full RGB565 pixel
 - only after the second byte is captured:
@@ -171,13 +188,16 @@ Recommended policy:
 ## Write contract
 - `wr_en` pulses for exactly one `pclk` cycle per completed pixel
 - `wr_addr` and `wr_data` must be valid during that pulse
+- `wr_en` is `0` while `VSYNC=1`
+- `wr_addr` holds its current value when no write occurs
 - no write occurs for incomplete pixels
 - no write occurs outside valid line regions
 
 ## Frame completion
-Recommended:
-- pulse `frame_done` when a frame boundary is seen after at least one valid pixel has been captured
-- `frame_active` is high while currently within a frame being captured
+Implemented policy:
+- `frame_done` is a one-`pclk` pulse on the `VSYNC` frame-boundary event that terminates a non-empty frame
+- `frame_active` becomes high after the first valid byte activity of a frame
+- `frame_active` clears on `VSYNC`
 
 ---
 
@@ -227,35 +247,23 @@ Use a simple linear write address:
 ## Safety rule
 Do not allow address wraparound during a single frame.
 
-Recommended policy:
-- once address reaches `76799`, either:
-  - stop incrementing further writes for the rest of the frame, or
-  - suppress additional writes until the next frame boundary
-
-The first baseline should prefer predictability over trying to recover from malformed or unexpected input streams.
+Implemented policy:
+- once address reaches `76799`, suppress additional writes until the next frame boundary
+- hold the final accepted `wr_addr` while writes are suppressed
 
 ---
 
-# 9. Counter strategy
+# 9. Internal state strategy
 
-Maintain simple counters in the `pclk` domain.
+The completed baseline keeps the stable interface narrow and uses only internal state for byte assembly, frame tracking, and address progression.
 
-## Suggested internal counters
-- `byte_phase` : 1 bit
-- `wr_addr` : 17 bits
-- optional `x_count` : 9 bits
-- optional `y_count` : 8 bits
+Implemented internal state includes:
+- `byte_phase` for first-byte / second-byte tracking
+- `first_byte` for RGB565 assembly
+- an internal write pointer used to drive stable `wr_addr` pulses
+- frame status flags for `frame_done`, `frame_active`, non-empty-frame detection, and address-cap suppression
 
-## Recommended use
-- `wr_addr` is the required architectural output
-- `x_count` and `y_count` are optional debug aids for simulation and later hardware diagnostics
-- if `x_count` / `y_count` are implemented:
-  - increment `x_count` on each completed pixel while `href=1`
-  - reset `x_count` at line end
-  - increment `y_count` at each valid line transition
-  - reset `y_count` at frame boundary
-
-These counters are useful but not mandatory if they complicate the baseline unnecessarily.
+No `x_count` or `y_count` debug outputs are part of the TASK-006 stable interface.
 
 ---
 
@@ -385,8 +393,7 @@ Useful signals to inspect:
 - `wr_en`
 - `wr_addr`
 - `wr_data`
-- `byte_phase`
-- optional counters/debug signals
+- DUT-internal `byte_phase` if hierarchical waveform inspection is useful
 
 ---
 
