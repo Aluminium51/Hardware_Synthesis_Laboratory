@@ -52,6 +52,32 @@ Human review performed:
 Notes:
 - all generated material should still be checked against actual board behavior and Vivado results
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned TASK-001 VGA bring-up
+- drafted VGA timing, reset synchronization, test pattern, top-level wiring, constraints, and timing testbench
+- refined clocking approach to use `clk_100` with a 25 MHz pixel enable instead of a project-wide fabric-divided clock
+- helped document TASK-001 completion after hardware confirmation
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/vga/vga_timing_640x480.v`
+- `rtl/vga/test_pattern.v`
+- `rtl/clocking/reset_sync.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `sim/tb/tb_vga_timing.sv`
+- `docs/tasks/TASK-001-vga-bringup.md`
+- `docs/05_roadmap.md`
+- `docs/02_clock_domains.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner confirmed stable vertical color bars on Basys 3 VGA hardware
+- simulation output was checked before recording the task as complete
+Notes:
+- camera, SCCB, framebuffer, and filters remained out of scope for TASK-001
+- next active milestone is TASK-002 framebuffer read path
+
 ## Future logging examples
 
 ### Example for RTL generation

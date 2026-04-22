@@ -36,6 +36,11 @@ Used for:
 - filter block
 - RGB output register stage if present
 
+TASK-001 bring-up note:
+- The first hardware-passed VGA bring-up keeps logic in the `clk_100` domain and advances VGA timing with a 25 MHz `pixel_ce`.
+- This avoids treating a fabric-divided flip-flop output as a project-wide clock.
+- A true `clk_vga` from Clock Wizard / MMCM can still be introduced later if framebuffer integration or monitor behavior requires it.
+
 ## 3. Camera master clock output domain
 Name:
 - `cam_xclk`

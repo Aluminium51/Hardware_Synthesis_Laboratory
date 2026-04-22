@@ -1,5 +1,8 @@
 # 05 Roadmap
 
+Current active milestone:
+- TASK-002 / Milestone 2 - framebuffer-backed display path
+
 ## Project philosophy
 This project must be built in stages.
 Do not attempt full camera-to-VGA integration before the display path has already been proven.
@@ -17,11 +20,16 @@ Deliverables:
 - baseline task files
 
 ## Milestone 1 — VGA bring-up
+Status:
+- Complete as of 2026-04-22.
+- Simulation passed for VGA timing.
+- Hardware monitor locked and displayed stable vertical color bars.
+
 Goal:
 - produce a stable VGA output on the monitor
 
 Scope:
-- clock generation for VGA domain
+- 25 MHz pixel rate derived from `clk_100`
 - `vga_timing_640x480`
 - simple visible pattern generator
 - top-level VGA wiring
@@ -37,7 +45,14 @@ Do not include yet:
 - framebuffer logic
 - filters
 
+Implementation note:
+- TASK-001 uses `clk_100` plus a 25 MHz `pixel_ce` for bring-up.
+- MMCM / Clock Wizard remains deferred unless later hardware behavior requires a true VGA pixel clock.
+
 ## Milestone 2 — framebuffer-backed display path
+Status:
+- Next active milestone for `TASK-002-framebuffer-read-path.md`.
+
 Goal:
 - display a known 320x240 image through 2x scaling on a 640x480 VGA output
 

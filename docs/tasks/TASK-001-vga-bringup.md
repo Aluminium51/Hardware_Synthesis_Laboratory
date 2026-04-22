@@ -1,5 +1,26 @@
 # TASK-001 VGA Bring-Up
 
+## Status
+Complete / hardware passed.
+
+Date completed: 2026-04-22
+
+Verified behavior:
+- Basys 3 VGA monitor locks reliably.
+- Stable vertical color bars are visible on the monitor.
+- VGA timing remains standard 640x480.
+- RGB output is black outside the active-video region by design.
+
+Verification:
+- `tb_vga_timing.sv` passed with Icarus Verilog using `-g2012`.
+- Hardware behavior was observed and confirmed by the repository owner.
+
+Scope note:
+- Camera logic, SCCB, framebuffer readout, and filters were intentionally not included in this stage.
+
+Next task:
+- `TASK-002-framebuffer-read-path.md`
+
 ## Goal
 Produce valid 640x480 @ 60 Hz VGA timing and show a stable visible test pattern on a monitor.
 

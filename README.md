@@ -497,6 +497,11 @@ Implement:
 Success condition:
 - monitor displays stable output
 
+Status:
+- Complete as of 2026-04-22.
+- Basys 3 hardware displayed stable vertical color bars.
+- `tb_vga_timing.sv` passed timing-counter and sync-window checks.
+
 ## Stage 2 — Framebuffer readout
 Implement:
 - BRAM test image
@@ -725,7 +730,7 @@ That will make final reporting much easier and safer.
 
 # 13. Current baseline target checklist
 
-- [ ] VGA timing generator works on hardware
+- [x] VGA timing generator works on hardware
 - [ ] BRAM-backed 320x240 image displays correctly
 - [ ] 2x scaling to 640x480 works correctly
 - [ ] grayscale filter works
@@ -736,7 +741,7 @@ That will make final reporting much easier and safer.
 - [ ] camera capture works
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules
+- [ ] simulation exists for major modules (VGA timing done; remaining modules pending)
 - [ ] final block diagram and report materials are prepared
 
 ---
