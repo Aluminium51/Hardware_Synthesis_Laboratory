@@ -511,6 +511,11 @@ Success condition:
 - correct doubled pixels
 - correct addressing
 
+Status:
+- Complete as of 2026-04-22.
+- Basys 3 hardware displayed the framebuffer-backed structured pattern.
+- `tb_vga_reader_320x240.sv` passed address mapping, 2x scaling, blanking, and control-alignment checks.
+
 ## Stage 3 — Filters
 Implement:
 - grayscale
@@ -731,8 +736,8 @@ That will make final reporting much easier and safer.
 # 13. Current baseline target checklist
 
 - [x] VGA timing generator works on hardware
-- [ ] BRAM-backed 320x240 image displays correctly
-- [ ] 2x scaling to 640x480 works correctly
+- [x] BRAM-backed 320x240 image displays correctly
+- [x] 2x scaling to 640x480 works correctly
 - [ ] grayscale filter works
 - [ ] negative filter works
 - [ ] threshold filter works
@@ -741,7 +746,7 @@ That will make final reporting much easier and safer.
 - [ ] camera capture works
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules (VGA timing done; remaining modules pending)
+- [ ] simulation exists for major modules (VGA timing and VGA reader/address mapping done; filters, SCCB, camera init, and capture pending)
 - [ ] final block diagram and report materials are prepared
 
 ---

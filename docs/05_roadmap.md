@@ -1,7 +1,7 @@
 # 05 Roadmap
 
 Current active milestone:
-- TASK-002 / Milestone 2 - framebuffer-backed display path
+- TASK-003 / Milestone 3 - basic filter block
 
 ## Project philosophy
 This project must be built in stages.
@@ -51,7 +51,9 @@ Implementation note:
 
 ## Milestone 2 — framebuffer-backed display path
 Status:
-- Next active milestone for `TASK-002-framebuffer-read-path.md`.
+- Complete as of 2026-04-22.
+- Simulation passed for VGA reader address mapping, 2x scaling, blanking, and control alignment.
+- Hardware monitor displayed the framebuffer-backed structured pattern with no obvious pixel skew.
 
 Goal:
 - display a known 320x240 image through 2x scaling on a 640x480 VGA output

@@ -78,6 +78,28 @@ Notes:
 - camera, SCCB, framebuffer, and filters remained out of scope for TASK-001
 - next active milestone is TASK-002 framebuffer read path
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned TASK-002 framebuffer read-path implementation
+- drafted the framebuffer wrapper, VGA read-address generator, top-level BRAM-backed display hookup, and reader testbench
+- helped document TASK-002 completion after simulation and hardware confirmation
+Files affected:
+- `rtl/memory/framebuffer_bram.v`
+- `rtl/vga/vga_reader_320x240.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_vga_reader_320x240.sv`
+- `docs/tasks/TASK-002-framebuffer-read-path.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner confirmed the BRAM-backed structured pattern displayed correctly on Basys 3 VGA hardware
+- simulation output was checked before recording the task as complete
+Notes:
+- camera capture, SCCB, filters, and XDC changes remained out of scope for TASK-002
+- next active milestone is TASK-003 basic filters
+
 ## Future logging examples
 
 ### Example for RTL generation
