@@ -1,5 +1,20 @@
 # TASK-003 Basic Filters
 
+## Status
+Complete as of 2026-04-22.
+
+Implemented:
+- raw, grayscale, negative, and threshold modes
+- 4-bit `gray4 = (R + 2*G + B) >> 2` grayscale value
+- threshold comparison in the same 4-bit domain: `gray4 >= threshold[3:0]`
+- switch mapping: `sw[1:0]` selects mode and `sw[5:2]` selects threshold
+
+Verification:
+- `iverilog -g2012 -o sim/run/tb_video_filter_basic.vvp rtl/filters/video_filter_basic.v sim/tb/tb_video_filter_basic.sv`
+- `vvp sim/run/tb_video_filter_basic.vvp`
+- Result: filter simulation passed for raw, grayscale, negative, threshold, mode switching, and default raw behavior.
+- Result: top-level Icarus Verilog elaboration passed with switch-controlled filter integration.
+
 ## Goal
 Implement the baseline display modes on the VGA readout path:
 - raw
@@ -52,6 +67,11 @@ For each 4-bit channel:
 - compute a grayscale or luminance-like value
 - compare it against a threshold control
 - output full white or full black
+
+## Implementation notes
+- Grayscale uses a 4-bit `gray4 = (R + 2*G + B) >> 2` value.
+- Threshold compares in the same 4-bit domain: `gray4 >= threshold[3:0]`.
+- Top-level filter control uses Basys 3 switches: `sw[1:0]` for mode and `sw[5:2]` for threshold.
 
 ## Deliverables
 - synthesizable filter module

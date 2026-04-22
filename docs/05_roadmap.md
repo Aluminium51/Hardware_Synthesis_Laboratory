@@ -70,6 +70,13 @@ Success criteria:
 - `tb_vga_reader_320x240.sv` verifies address mapping
 
 ## Milestone 3 — basic filter block
+Status:
+- Complete as of 2026-04-22.
+- `video_filter_basic` implements raw, grayscale, negative, and threshold display modes.
+- `tb_video_filter_basic.sv` passed for all modes, mode switching, and default raw behavior.
+- Icarus Verilog top-level elaboration passed with switch-controlled filter integration.
+- Hardware visual validation remains part of later full-system bring-up.
+
 Goal:
 - add real-time switchable display modes without involving the camera yet
 

@@ -103,6 +103,31 @@ Notes:
 ### [2026-04-22]
 Tool: ChatGPT Codex
 Used for:
+- planned and implemented TASK-003 basic filters
+- drafted the combinational RGB444 raw, grayscale, negative, and threshold filter block
+- wired switch-controlled mode and threshold selection into the VGA readout path
+- enabled Basys 3 switch constraints for filter control
+- drafted and ran the self-checking filter testbench
+- updated project docs to record TASK-003 completion
+Files affected:
+- `rtl/filters/video_filter_basic.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `sim/tb/tb_video_filter_basic.sv`
+- `docs/tasks/TASK-003-basic-filters.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- filter simulation output was checked before recording the task as complete
+- top-level Icarus Verilog elaboration was checked
+Notes:
+- hardware live-filter validation has not been recorded yet and remains part of later full-system bring-up
+- edge detection, line buffers, filtered-frame storage, and camera-path changes remained out of scope for TASK-003
+
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
 - planned and implemented TASK-004 SCCB master
 - drafted the write-only SCCB transaction FSM and self-checking testbench
 - removed the obsolete empty SCCB testbench placeholder

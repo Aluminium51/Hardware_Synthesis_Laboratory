@@ -327,21 +327,23 @@ That means the stored image remains unchanged, and the selected display mode onl
 
 ### Filter mode selection
 The Basys 3 slide switches select the mode:
-- raw
-- grayscale
-- negative
-- threshold
+- `sw[1:0] = 00`: raw
+- `sw[1:0] = 01`: grayscale
+- `sw[1:0] = 10`: negative
+- `sw[1:0] = 11`: threshold
+
+The threshold value is selected with `sw[5:2]`.
 
 ### Filter 1: grayscale
 Take one RGB pixel and convert it to a luminance-like value.
 
 Simple hardware-friendly example:
-- `gray = (R + 2*G + B) >> 2`
+- `gray4 = (R + 2*G + B) >> 2`
 
 Then output:
-- `R = gray`
-- `G = gray`
-- `B = gray`
+- `R = gray4`
+- `G = gray4`
+- `B = gray4`
 
 ### Filter 2: negative
 Invert each channel:
@@ -351,10 +353,8 @@ Invert each channel:
 
 ### Filter 3: threshold
 First compute grayscale, then compare against a threshold:
-- if `gray >= threshold` -> white
+- if `gray4 >= threshold` -> white
 - else -> black
-
-Threshold can be set with upper slide switches in the future if desired.
 
 ### Why these filters were chosen
 They are:
@@ -530,6 +530,12 @@ Implement:
 
 Success condition:
 - switching modes changes display correctly
+
+Status:
+- Complete as of 2026-04-22.
+- `tb_video_filter_basic.sv` passed for raw, grayscale, negative, threshold, mode switching, and default raw behavior.
+- Top-level Icarus Verilog elaboration passed with switch-controlled filter integration.
+- Hardware live-filter validation is still pending full-system bring-up.
 
 ## Stage 4 — SCCB and camera init
 Implement:
@@ -752,16 +758,16 @@ That will make final reporting much easier and safer.
 - [x] VGA timing generator works on hardware
 - [x] BRAM-backed 320x240 image displays correctly
 - [x] 2x scaling to 640x480 works correctly
-- [ ] grayscale filter works
-- [ ] negative filter works
-- [ ] threshold filter works
+- [x] grayscale filter works in simulation
+- [x] negative filter works in simulation
+- [x] threshold filter works in simulation
 - [x] SCCB master works in simulation
 - [x] OV7670 init sequence works in simulation
 - [x] camera capture module works in simulation
 - [x] camera capture is integrated into the top-level framebuffer path
 - [ ] live raw video displays
 - [ ] live filtered video displays
-- [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, SCCB master, camera init, and camera capture done; filters pending)
+- [x] simulation exists for major modules (VGA timing, VGA reader/address mapping, filters, SCCB master, camera init, and camera capture)
 - [ ] final block diagram and report materials are prepared
 
 ---

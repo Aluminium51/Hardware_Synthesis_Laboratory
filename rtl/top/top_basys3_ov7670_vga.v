@@ -1,13 +1,15 @@
 `timescale 1ns/1ps
 
 // top_basys3_ov7670_vga
-// Purpose: TASK-007 raw OV7670 camera-to-framebuffer-to-VGA integration.
+// Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
 // Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
 // Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
+// Inputs: slide switches select VGA readout filter mode and threshold.
 // Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
 module top_basys3_ov7670_vga (
     input  wire        clk_100,
     input  wire        btnC,
+    input  wire [5:0]  sw,
     output wire        Hsync,
     output wire        Vsync,
     output wire [3:0]  vgaRed,
@@ -34,6 +36,23 @@ module top_basys3_ov7670_vga (
     );
 
     wire rst_vga = rst_sys;
+
+    wire [5:0] sw_sync;
+
+    genvar sw_i;
+    generate
+        for (sw_i = 0; sw_i < 6; sw_i = sw_i + 1) begin : gen_sw_sync
+            sync_2ff u_sync_sw (
+                .clk     (clk_100),
+                .rst     (rst_sys),
+                .d_async (sw[sw_i]),
+                .q_sync  (sw_sync[sw_i])
+            );
+        end
+    endgenerate
+
+    wire [1:0] filter_mode = sw_sync[1:0];
+    wire [3:0] filter_threshold = sw_sync[5:2];
 
     reg [1:0] pixel_div = 2'd0;
     reg [1:0] xclk_div = 2'd0;
@@ -191,8 +210,17 @@ module top_basys3_ov7670_vga (
         .rgb444_out       (reader_rgb444)
     );
 
+    wire [11:0] filtered_rgb444;
+
+    video_filter_basic u_video_filter_basic (
+        .rgb444_in  (reader_rgb444),
+        .mode       (filter_mode),
+        .threshold  (filter_threshold),
+        .rgb444_out (filtered_rgb444)
+    );
+
     wire [11:0] display_rgb444 = (init_done && active_video_reader) ?
-                                 reader_rgb444 : 12'h000;
+                                 filtered_rgb444 : 12'h000;
 
     reg [25:0] heartbeat = 26'd0;
 
