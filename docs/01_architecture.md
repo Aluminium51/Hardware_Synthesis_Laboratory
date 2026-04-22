@@ -47,8 +47,11 @@ Responsibilities:
 
 ### `ip/clk_wiz_video/`
 Responsibilities:
-- derive VGA pixel clock from board clock
-- derive camera XCLK if driven from FPGA
+- deferred option for deriving true video clocks if the simple baseline clocking is not sufficient
+
+Current TASK-007 baseline:
+- VGA timing remains in `clk_100` and advances with a 25 MHz `pixel_ce`
+- camera `XCLK` is generated in the top level with a simple divide-by-4 from `clk_100`
 
 ## VGA side
 ### `rtl/vga/vga_timing_640x480.v`

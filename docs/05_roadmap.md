@@ -1,7 +1,7 @@
 # 05 Roadmap
 
 Current active milestone:
-- TASK-003 / Milestone 3 - basic filter block
+- TASK-007 / Milestone 7 - raw top-level camera integration
 
 ## Project philosophy
 This project must be built in stages.
@@ -126,7 +126,7 @@ Success criteria:
 Status:
 - Complete as of 2026-04-22.
 - Simulation passed for OV7670 RGB565 byte assembly, RGB444 conversion, frame/line handling, incomplete byte suppression, and address-cap behavior.
-- Live camera-to-framebuffer integration has not been performed yet; that remains in Milestone 7.
+- Live camera-to-framebuffer integration is implemented in the top level, with hardware validation still pending.
 
 Goal:
 - provide a verified camera-domain capture producer for framebuffer writes
@@ -143,22 +143,29 @@ Success criteria:
 - simulation shows correct two-byte pixel assembly and write behavior
 - stable `wr_en`, `wr_addr`, `wr_data`, `frame_done`, and `frame_active` interface is ready for integration
 
-## Milestone 7 — full baseline integration
+## Milestone 7 — raw top-level camera integration
+Status:
+- This section currently tracks the TASK-007 raw-video integration slice; filter integration remains separate.
+- Integrated as of 2026-04-22.
+- Icarus Verilog top-level elaboration passed for the raw camera-to-framebuffer-to-VGA design.
+- Module simulations still pass for VGA timing, VGA reader, SCCB master, OV7670 init, and OV7670 capture.
+- Vivado synthesis, bitstream generation, and hardware validation are pending.
+
 Goal:
-- stable live camera -> BRAM -> filter -> VGA pipeline
+- raw live camera -> BRAM -> VGA pipeline
 
 Scope:
 - full top-level wiring
-- switch-based mode selection
+- OV7670 SCCB/init hookup
+- camera capture as the only active framebuffer writer
 - debug LEDs
-- final baseline integration fixes
+- camera/VGA pin constraints
 
 Success criteria:
-- raw mode works on hardware
-- grayscale works on hardware
-- negative works on hardware
-- threshold works on hardware
-- live display is stable enough for demonstration
+- raw live video works on hardware
+- monitor locks to the VGA signal
+- camera init done/error LEDs are meaningful
+- frame activity LED responds to captured frames
 
 ## Milestone 8 — report and demo support
 Goal:

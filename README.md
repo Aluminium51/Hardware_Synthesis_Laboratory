@@ -553,7 +553,8 @@ Success condition:
 
 Status:
 - Complete as of 2026-04-22 for the standalone capture block.
-- Live camera display remains part of the integration stage.
+- Capture is now wired into the top-level framebuffer write path for TASK-007.
+- Vivado build and hardware live-video validation are still pending.
 
 ## Stage 6 — Integration cleanup
 Fix:
@@ -757,7 +758,7 @@ That will make final reporting much easier and safer.
 - [x] SCCB master works in simulation
 - [x] OV7670 init sequence works in simulation
 - [x] camera capture module works in simulation
-- [ ] camera capture is integrated into the top-level framebuffer path
+- [x] camera capture is integrated into the top-level framebuffer path
 - [ ] live raw video displays
 - [ ] live filtered video displays
 - [ ] simulation exists for major modules (VGA timing, VGA reader/address mapping, SCCB master, camera init, and camera capture done; filters pending)

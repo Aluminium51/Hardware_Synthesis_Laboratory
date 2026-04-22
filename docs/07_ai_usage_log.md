@@ -156,6 +156,29 @@ Human review performed:
 Notes:
 - full top-level live camera integration, hardware capture validation, and color/orientation tuning remain out of scope for TASK-006
 
+### [2026-04-22]
+Tool: ChatGPT Codex
+Used for:
+- planned and implemented TASK-007 raw top-level OV7670-to-VGA integration
+- replaced the synthetic framebuffer writer with the camera capture write path
+- wired OV7670 SCCB init, SCCB top-level tri-state, camera XCLK, camera reset/power controls, CDC status synchronization, debug LEDs, and camera pin constraints
+- re-ran top-level elaboration and focused module simulations
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/util/sync_2ff.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `docs/01_architecture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- Icarus Verilog top-level elaboration was checked
+- existing module simulations were rerun and checked
+Notes:
+- Vivado synthesis, bitstream generation, and hardware validation were not completed in this environment
+- TASK-007 should not be marked complete until raw live video is confirmed on hardware
+
 ## Future logging examples
 
 ### Example for RTL generation

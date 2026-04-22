@@ -1,10 +1,10 @@
 `timescale 1ns/1ps
 
 // top_basys3_ov7670_vga
-// Purpose: TASK-002 framebuffer-backed VGA display bring-up for Basys 3.
-// Clock domain: clk_100, with a 25 MHz pixel clock-enable for VGA timing.
-// Outputs: VGA sync/RGB pins and simple LED debug.
-// Assumption: runtime framebuffer fill completes before hardware observation matters.
+// Purpose: TASK-007 raw OV7670 camera-to-framebuffer-to-VGA integration.
+// Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
+// Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
+// Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
 module top_basys3_ov7670_vga (
     input  wire        clk_100,
     input  wire        btnC,
@@ -13,30 +13,43 @@ module top_basys3_ov7670_vga (
     output wire [3:0]  vgaRed,
     output wire [3:0]  vgaGreen,
     output wire [3:0]  vgaBlue,
+    output wire        cam_xclk,
+    input  wire        cam_pclk,
+    input  wire        cam_vsync,
+    input  wire        cam_href,
+    input  wire [7:0]  cam_d,
+    output wire        cam_sioc,
+    inout  wire        cam_siod,
+    output wire        cam_pwdn,
+    output wire        cam_reset,
     output wire [3:0]  led
 );
 
-    localparam [16:0] FRAME_LAST_ADDR = 17'd76799;
+    wire rst_sys;
 
-    wire rst_vga;
-
-    reset_sync u_reset_sync (
+    reset_sync u_reset_sync_sys (
         .clk       (clk_100),
         .rst_async (btnC),
-        .rst_sync  (rst_vga)
+        .rst_sync  (rst_sys)
     );
 
+    wire rst_vga = rst_sys;
+
     reg [1:0] pixel_div = 2'd0;
+    reg [1:0] xclk_div = 2'd0;
 
     always @(posedge clk_100) begin
-        if (rst_vga) begin
+        if (rst_sys) begin
             pixel_div <= 2'd0;
+            xclk_div  <= 2'd0;
         end else begin
             pixel_div <= pixel_div + 1'b1;
+            xclk_div  <= xclk_div + 1'b1;
         end
     end
 
     wire pixel_ce = (pixel_div == 2'd3);
+    assign cam_xclk = xclk_div[1];
 
     wire       hsync_timing;
     wire       vsync_timing;
@@ -55,85 +68,102 @@ module top_basys3_ov7670_vga (
         .y            (y)
     );
 
-    reg [16:0] fill_addr = 17'd0;
-    reg [5:0]  fill_col_in_band = 6'd0;
-    reg [4:0]  fill_row_in_grid = 5'd0;
-    reg [2:0]  fill_band = 3'd0;
-    reg        fill_done = 1'b0;
+    wire        sccb_start;
+    wire [7:0]  sccb_dev_addr;
+    wire [7:0]  sccb_reg_addr;
+    wire [7:0]  sccb_reg_data;
+    wire        sccb_busy;
+    wire        sccb_done;
+    wire        sccb_ack_error;
+    wire        siod_in;
+    wire        siod_oe;
+    wire        siod_out;
+    wire        init_done;
+    wire        init_error;
 
-    wire fill_end_of_band = (fill_col_in_band == 6'd39);
-    wire fill_end_of_row  = fill_end_of_band && (fill_band == 3'd7);
-
-    function [11:0] fill_pattern_rgb444;
-        input [2:0] band;
-        input [5:0] col_in_band;
-        input [4:0] row_in_grid;
-        begin
-            if ((col_in_band == 6'd0) || (row_in_grid == 5'd0)) begin
-                fill_pattern_rgb444 = 12'h000;
-            end else begin
-                case (band)
-                    3'd0: fill_pattern_rgb444 = 12'hfff;
-                    3'd1: fill_pattern_rgb444 = 12'hff0;
-                    3'd2: fill_pattern_rgb444 = 12'h0ff;
-                    3'd3: fill_pattern_rgb444 = 12'h0f0;
-                    3'd4: fill_pattern_rgb444 = 12'hf0f;
-                    3'd5: fill_pattern_rgb444 = 12'hf00;
-                    3'd6: fill_pattern_rgb444 = 12'h00f;
-                    default: fill_pattern_rgb444 = 12'h888;
-                endcase
-            end
-        end
-    endfunction
-
-    wire [11:0] fill_rgb444 = fill_pattern_rgb444(
-        fill_band,
-        fill_col_in_band,
-        fill_row_in_grid
+    ov7670_init u_ov7670_init (
+        .clk            (clk_100),
+        .rst            (rst_sys),
+        .start_init     (1'b1),
+        .sccb_busy      (sccb_busy),
+        .sccb_done      (sccb_done),
+        .sccb_ack_error (sccb_ack_error),
+        .sccb_start     (sccb_start),
+        .sccb_dev_addr  (sccb_dev_addr),
+        .sccb_reg_addr  (sccb_reg_addr),
+        .sccb_reg_data  (sccb_reg_data),
+        .init_busy      (),
+        .init_done      (init_done),
+        .init_error     (init_error)
     );
 
-    wire fb_wr_en = !rst_vga && !fill_done;
+    ov7670_sccb_master u_ov7670_sccb_master (
+        .clk       (clk_100),
+        .rst       (rst_sys),
+        .start     (sccb_start),
+        .dev_addr  (sccb_dev_addr),
+        .reg_addr  (sccb_reg_addr),
+        .reg_data  (sccb_reg_data),
+        .siod_in   (siod_in),
+        .busy      (sccb_busy),
+        .done      (sccb_done),
+        .ack_error (sccb_ack_error),
+        .sioc      (cam_sioc),
+        .siod_oe   (siod_oe),
+        .siod_out  (siod_out)
+    );
 
-    always @(posedge clk_100) begin
-        if (rst_vga) begin
-            fill_addr        <= 17'd0;
-            fill_col_in_band <= 6'd0;
-            fill_row_in_grid <= 5'd0;
-            fill_band        <= 3'd0;
-            fill_done        <= 1'b0;
-        end else if (!fill_done) begin
-            if (fill_addr == FRAME_LAST_ADDR) begin
-                fill_done <= 1'b1;
-            end else begin
-                fill_addr <= fill_addr + 1'b1;
-            end
+    assign cam_siod = siod_oe ? siod_out : 1'bz;
+    assign siod_in  = cam_siod;
 
-            if (fill_end_of_row) begin
-                fill_col_in_band <= 6'd0;
-                fill_band        <= 3'd0;
+    assign cam_pwdn  = 1'b0;
+    assign cam_reset = ~rst_sys;
 
-                if (fill_row_in_grid == 5'd29) begin
-                    fill_row_in_grid <= 5'd0;
-                end else begin
-                    fill_row_in_grid <= fill_row_in_grid + 1'b1;
-                end
-            end else if (fill_end_of_band) begin
-                fill_col_in_band <= 6'd0;
-                fill_band        <= fill_band + 1'b1;
-            end else begin
-                fill_col_in_band <= fill_col_in_band + 1'b1;
-            end
-        end
-    end
+    wire rst_cam_button;
+
+    reset_sync u_reset_sync_cam (
+        .clk       (cam_pclk),
+        .rst_async (btnC),
+        .rst_sync  (rst_cam_button)
+    );
+
+    wire init_done_cam;
+
+    sync_2ff u_sync_init_done_cam (
+        .clk     (cam_pclk),
+        .rst     (rst_cam_button),
+        .d_async (init_done),
+        .q_sync  (init_done_cam)
+    );
+
+    wire capture_rst = rst_cam_button || !init_done_cam;
+
+    wire        capture_wr_en;
+    wire [16:0] capture_wr_addr;
+    wire [11:0] capture_wr_data;
+    wire        capture_frame_done;
+
+    ov7670_capture_rgb565 u_ov7670_capture (
+        .pclk         (cam_pclk),
+        .rst          (capture_rst),
+        .vsync        (cam_vsync),
+        .href         (cam_href),
+        .cam_d        (cam_d),
+        .wr_en        (capture_wr_en),
+        .wr_addr      (capture_wr_addr),
+        .wr_data      (capture_wr_data),
+        .frame_done   (capture_frame_done),
+        .frame_active ()
+    );
 
     wire [16:0] fb_rd_addr;
     wire [11:0] fb_rd_data;
 
     framebuffer_bram u_framebuffer (
-        .wr_clk  (clk_100),
-        .wr_en   (fb_wr_en),
-        .wr_addr (fill_addr),
-        .wr_data (fill_rgb444),
+        .wr_clk  (cam_pclk),
+        .wr_en   (capture_wr_en),
+        .wr_addr (capture_wr_addr),
+        .wr_data (capture_wr_data),
         .rd_clk  (clk_100),
         .rd_addr (fb_rd_addr),
         .rd_data (fb_rd_data)
@@ -161,15 +191,55 @@ module top_basys3_ov7670_vga (
         .rgb444_out       (reader_rgb444)
     );
 
-    wire [11:0] display_rgb444 = fill_done ? reader_rgb444 : 12'h000;
+    wire [11:0] display_rgb444 = (init_done && active_video_reader) ?
+                                 reader_rgb444 : 12'h000;
 
     reg [25:0] heartbeat = 26'd0;
 
     always @(posedge clk_100) begin
-        if (rst_vga) begin
+        if (rst_sys) begin
             heartbeat <= 26'd0;
         end else begin
             heartbeat <= heartbeat + 1'b1;
+        end
+    end
+
+    reg frame_done_toggle = 1'b0;
+
+    always @(posedge cam_pclk) begin
+        if (capture_rst) begin
+            frame_done_toggle <= 1'b0;
+        end else if (capture_frame_done) begin
+            frame_done_toggle <= ~frame_done_toggle;
+        end
+    end
+
+    wire frame_done_toggle_sys;
+
+    sync_2ff u_sync_frame_done_toggle_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (frame_done_toggle),
+        .q_sync  (frame_done_toggle_sys)
+    );
+
+    reg        frame_done_toggle_sys_d = 1'b0;
+    reg [23:0] frame_activity_hold = 24'd0;
+
+    wire frame_done_event_sys = frame_done_toggle_sys ^ frame_done_toggle_sys_d;
+
+    always @(posedge clk_100) begin
+        if (rst_sys) begin
+            frame_done_toggle_sys_d <= 1'b0;
+            frame_activity_hold     <= 24'd0;
+        end else begin
+            frame_done_toggle_sys_d <= frame_done_toggle_sys;
+
+            if (frame_done_event_sys) begin
+                frame_activity_hold <= 24'hffffff;
+            end else if (frame_activity_hold != 24'd0) begin
+                frame_activity_hold <= frame_activity_hold - 1'b1;
+            end
         end
     end
 
@@ -180,6 +250,9 @@ module top_basys3_ov7670_vga (
     assign vgaGreen = display_rgb444[7:4];
     assign vgaBlue  = display_rgb444[3:0];
 
-    assign led = {1'b0, fill_done, rst_vga, heartbeat[25]};
+    assign led[0] = heartbeat[25];
+    assign led[1] = init_done;
+    assign led[2] = init_error;
+    assign led[3] = (frame_activity_hold != 24'd0);
 
 endmodule

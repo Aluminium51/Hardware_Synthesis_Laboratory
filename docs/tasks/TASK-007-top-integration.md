@@ -1,7 +1,26 @@
 # TASK-007 — Top-Level Integration
 
 ## Status
-Planned
+Integrated / pre-hardware checks passed; Vivado and hardware validation pending.
+
+Date updated: 2026-04-22
+
+Implemented so far:
+- `top_basys3_ov7670_vga.v` now connects OV7670 SCCB init, RGB565 capture, framebuffer write port, framebuffer read path, and VGA output.
+- The synthetic framebuffer fill path has been removed as an active writer.
+- Camera capture is held in reset until `init_done` is synchronized into the `cam_pclk` domain.
+- `cam_siod` is implemented as an explicit top-level tri-state with readback to `siod_in`.
+- `cam_xclk` is generated from `clk_100` with a divide-by-4 baseline divider.
+- Debug LEDs report slow heartbeat, init done, init error, and stretched frame-done activity.
+- `constr/basys3_ov7670_vga.xdc` now enables the camera pins, `cam_pclk` clock constraint, `cam_siod` pull-up, and asynchronous grouping between `clk_100` and `cam_pclk`.
+
+Verification so far:
+- Icarus Verilog top-level elaboration passed for the integrated RTL.
+- Existing module simulations passed for VGA timing, VGA reader, SCCB master, OV7670 init, and OV7670 capture.
+
+Still required before marking complete:
+- Vivado synthesis, implementation, and bitstream generation.
+- Hardware validation with the OV7670 and VGA monitor connected.
 
 ## Purpose
 Integrate the already verified project building blocks into one hardware-testable top-level design:
