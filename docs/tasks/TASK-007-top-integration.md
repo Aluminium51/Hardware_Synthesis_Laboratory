@@ -1,9 +1,9 @@
 # TASK-007 — Top-Level Integration
 
 ## Status
-Integrated / pre-hardware checks passed; Vivado and hardware validation pending.
+Complete / hardware passed.
 
-Date updated: 2026-04-22
+Date completed: 2026-05-07
 
 Implemented so far:
 - `top_basys3_ov7670_vga.v` now connects OV7670 SCCB init, RGB565 capture, framebuffer write port, framebuffer read path, and VGA output.
@@ -11,16 +11,21 @@ Implemented so far:
 - Camera capture is held in reset until `init_done` is synchronized into the `cam_pclk` domain.
 - `cam_siod` is implemented as an explicit top-level tri-state with readback to `siod_in`.
 - `cam_xclk` is generated from `clk_100` with a divide-by-4 baseline divider.
+- OV7670 bring-up now uses the sensor's internal color-bar pattern and raw passthrough display so camera-path debug is isolated from live-scene issues and filter settings.
+- `sw[5]` now enables a VGA-only test pattern that bypasses the camera/framebuffer display path while leaving the camera logic running in the background for debug.
+- SCCB timing has been slowed to match the known-good reference design more closely.
 - Debug LEDs report slow heartbeat, init done, init error, and stretched frame-done activity.
-- `constr/basys3_ov7670_vga.xdc` now enables the camera pins, `cam_pclk` clock constraint, `cam_siod` pull-up, and asynchronous grouping between `clk_100` and `cam_pclk`.
+- `constr/basys3_ov7670_vga.xdc` now enables the camera pins, `cam_pclk` clock constraint, dedicated-route override, `cam_siod` pull-up, and asynchronous grouping between `clk_100` and `cam_pclk`.
 
-Verification so far:
+Verification:
 - Icarus Verilog top-level elaboration passed for the integrated RTL.
 - Existing module simulations passed for VGA timing, VGA reader, SCCB master, OV7670 init, and OV7670 capture.
-
-Still required before marking complete:
-- Vivado synthesis, implementation, and bitstream generation.
-- Hardware validation with the OV7670 and VGA monitor connected.
+- Vivado synthesis, implementation, and bitstream generation completed for the baseline hardware image.
+- Basys 3 hardware validation passed with OV7670 and VGA monitor connected.
+- The monitor locks to standard `640x480 @ 60 Hz` VGA.
+- Live OV7670 video is captured into the single RGB444 framebuffer and displayed as `320x240` content with exact 2x scaling.
+- Raw / grayscale / negative / threshold modes are selectable in real time on the VGA readout path.
+- Debug LEDs provide meaningful heartbeat, init, error, and frame-activity status.
 
 ## Purpose
 Integrate the already verified project building blocks into one hardware-testable top-level design:
@@ -33,7 +38,7 @@ Integrate the already verified project building blocks into one hardware-testabl
 
 This is the milestone where the project stops being a collection of validated submodules and becomes a complete live camera-to-display system.
 
-The goal of TASK-007 is **raw live video on VGA**, not filters yet.
+The original TASK-007 goal was raw live video on VGA. The completed baseline also keeps the required filters on the VGA readout path.
 
 ---
 
@@ -59,6 +64,8 @@ This task is successful when:
 - the existing VGA display path shows a live raw camera image
 - basic debug LEDs provide meaningful status during bring-up
 
+This was validated on hardware on 2026-05-07.
+
 ---
 
 # 2. Scope
@@ -75,7 +82,7 @@ This task is successful when:
 - top-level build, synthesis, implementation, bitstream, and hardware validation
 
 ## Out of scope
-- image filters
+- new filter modules beyond the existing raw / grayscale / negative / threshold baseline
 - edge detection
 - color/orientation tuning beyond minimal sanity fixes
 - extra credit modes
@@ -84,7 +91,7 @@ This task is successful when:
 - double buffering
 - frame synchronization improvements beyond the current single-frame baseline
 
-This task is about getting the **first raw live image**.
+This task produced the first complete live camera-to-VGA baseline. Filters are also available on the VGA readout path for the completed system.
 
 ---
 
@@ -298,7 +305,7 @@ Accept that the live image may show:
 
 Do not attempt to solve this in TASK-007.
 
-The milestone goal is **live raw video works**, not perfect frame ownership.
+The milestone goal was **live raw video works**, not perfect frame ownership. That goal was met on hardware on 2026-05-07.
 
 ---
 
@@ -443,6 +450,11 @@ Success criteria:
 - `init_error` stays low
 - live camera-driven image appears on screen
 
+Recorded result:
+- hardware acceptance passed on 2026-05-07
+- live raw video displays through the framebuffer and VGA read path
+- live filtered video displays in grayscale, negative, and threshold modes
+
 Allowed imperfections for first success:
 - wrong color order
 - mirrored or flipped image
@@ -497,7 +509,7 @@ This debug order matters. Do not debug all layers at once.
 
 Do **not** do any of the following in this task:
 
-- do not add filters
+- do not add new filters beyond the baseline raw / grayscale / negative / threshold modes
 - do not add edge detection
 - do not refactor the working VGA path
 - do not redesign the framebuffer
@@ -506,7 +518,7 @@ Do **not** do any of the following in this task:
 - do not “improve” lower-level verified modules without evidence
 - do not chase image tuning before raw live video exists
 
-This task is about first complete raw integration.
+This task completed the raw integration slice and left the required baseline filters active on the VGA readout path.
 
 ---
 
@@ -559,8 +571,8 @@ OV7670
 
 That is the baseline system the rest of the project depends on.
 
-Once this works, the next milestone is straightforward:
-- integrate grayscale
-- integrate negative
-- integrate threshold
-- select filters on the VGA readout path
+The completed baseline also includes the required readout-path filters:
+- raw
+- grayscale
+- negative
+- threshold

@@ -21,9 +21,10 @@ Verification:
 - `tb_ov7670_capture.sv` passed with Icarus Verilog using `-g2012`.
 - Simulation covered short valid line capture, line gaps, frame-boundary reset, incomplete byte-pair suppression, explicit `frame_active` behavior, `wr_en=0` during `VSYNC`, `wr_addr` hold behavior, and address-cap suppression.
 - VCD output is generated at `sim/run/tb_ov7670_capture.vcd`.
+- Hardware validation passed on 2026-05-07 as part of the completed baseline; live OV7670 pixels are captured into the framebuffer and displayed through the VGA read path.
 
 Scope note:
-- This task does not wire camera capture into the top level or framebuffer instance. That remains for TASK-007 full integration.
+- This standalone task did not originally wire camera capture into the top level or framebuffer instance. That integration is now complete in TASK-007.
 
 Next task:
 - `TASK-007-top-integration.md`
@@ -399,13 +400,13 @@ Useful signals to inspect:
 
 # 13. Hardware acceptance for this task
 
-Hardware testing is optional for TASK-006 if full top-level integration is not yet in place.
+Hardware testing is optional for the standalone TASK-006 module before full top-level integration is available.
 
 If you choose to test partially later, likely evidence would be:
 - framebuffer visibly changing under camera-driven writes
 - activity LEDs for frame/capture events
 
-But do **not** block task completion on hardware yet if TASK-007 is reserved for full integration.
+Do not block standalone TASK-006 completion on hardware when TASK-007 is reserved for full integration.
 
 Primary acceptance here is:
 - correct RTL

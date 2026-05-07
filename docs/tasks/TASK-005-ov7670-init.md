@@ -3,15 +3,17 @@
 ## Status
 Complete / simulation passed.
 
-Date completed: 2026-04-22
+Date updated: 2026-05-05
 
 Verified behavior:
-- `ov7670_reg_rom.v` exposes a deterministic 12-entry conservative QVGA RGB565 startup table.
+- `ov7670_reg_rom.v` now exposes a deterministic extended RGB565/QVGA startup table derived from the known-good hardware reference design.
+- The final ROM entry keeps OV7670 internal color bars enabled so hardware bring-up can target a stable debug pattern before switching to live video.
 - Invalid ROM indices return the final valid entry with `is_last=1`.
 - `ov7670_init.v` waits for startup delay and explicit `start_init` before issuing SCCB traffic.
 - The init FSM emits one `sccb_start` pulse per ROM entry and holds transaction fields stable while SCCB is busy.
 - The FSM waits `POST_RESET_DELAY_CLKS` after the `12/80` soft-reset write.
 - `init_done` and `init_error` are sticky until reset, and failures stop ROM advancement.
+- Hardware validation passed on 2026-05-07 as part of the completed baseline; camera initialization reaches the expected done state without the error indicator.
 
 Verification:
 - `tb_ov7670_init.sv` passed with Icarus Verilog using `-g2012`.
@@ -19,7 +21,7 @@ Verification:
 - VCD output is generated at `sim/run/tb_ov7670_init.vcd`.
 
 Scope note:
-- Pixel capture, framebuffer writes, live VGA display integration, and top-level LED wiring remain out of scope.
+- Pixel capture, framebuffer writes, live VGA display integration, and top-level LED wiring were out of scope for the standalone TASK-005 module work and are covered by the later integration tasks.
 
 Next task:
 - `TASK-006-camera-capture.md`

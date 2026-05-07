@@ -122,7 +122,7 @@ Human review performed:
 - filter simulation output was checked before recording the task as complete
 - top-level Icarus Verilog elaboration was checked
 Notes:
-- hardware live-filter validation has not been recorded yet and remains part of later full-system bring-up
+- hardware live-filter validation was later recorded as passed on 2026-05-07 as part of the completed baseline
 - edge detection, line buffers, filtered-frame storage, and camera-path changes remained out of scope for TASK-003
 
 ### [2026-04-22]
@@ -203,6 +203,86 @@ Human review performed:
 Notes:
 - Vivado synthesis, bitstream generation, and hardware validation were not completed in this environment
 - TASK-007 should not be marked complete until raw live video is confirmed on hardware
+
+### [2026-05-05]
+Tool: ChatGPT Codex
+Used for:
+- analyzed corrupted OV7670-to-VGA hardware output against a known-good reference design
+- replaced the minimal OV7670 init ROM with the fuller known-good register table while keeping internal color bars enabled for debug
+- slowed SCCB timing, forced raw display-only debug output, added `cam_pclk` route override, and updated the init testbench for the extended ROM
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `rtl/camera/ov7670_init.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `sim/tb/tb_ov7670_init.sv`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/05_roadmap.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- reference RTL and current repo RTL were compared before changing the register table and top-level bring-up behavior
+- simulations were rerun after the edits
+Notes:
+- this change intentionally targets a stable debug pattern first; live video remains a later validation step
+
+### [2026-05-06]
+Tool: ChatGPT Codex
+Used for:
+- implemented a switchable VGA-only test-pattern mode for adapter-path debug
+- remapped top-level switch usage so `sw[5]` selects the VGA test pattern and `sw[4:2]` provide a coarse threshold control in camera mode
+- restored filter output on the normal camera display path while keeping the debug-pattern override separate
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `README.md`
+- `docs/tasks/TASK-003-basic-filters.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- top-level switch mapping and display mux behavior were reviewed against the existing VGA timing, test-pattern, and filter modules
+- targeted simulation and elaboration checks were rerun after the change
+Notes:
+- the new mode is intended specifically to isolate the VGA-to-HDMI adapter path from camera-side issues
+
+### [2026-05-06]
+Tool: ChatGPT Codex
+Used for:
+- replaced the coarse switch-based threshold with a stored 4-bit threshold adjusted by `btnU` / `btnD`
+- added top-level button synchronization/debouncing/one-shot press handling and updated the board constraints/docs
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `README.md`
+- `docs/tasks/TASK-003-basic-filters.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- top-level button integration and threshold-clamp behavior were reviewed against the existing filter and reset flow
+- targeted compile/simulation checks were rerun after the change
+Notes:
+- `sw[4:2]` are now unused/reserved and threshold resets to mid-scale on `btnC`
+
+### [2026-05-07]
+Tool: ChatGPT Codex
+Used for:
+- updated documentation to record that the baseline system is complete on hardware
+- aligned README, roadmap, requirements, architecture notes, and task status files with the completed live OV7670-to-VGA baseline
+- recorded live raw video, live filtered video, threshold button control, and VGA-only debug-pattern behavior
+Files affected:
+- `README.md`
+- `docs/00_requirements.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-003-basic-filters.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-006-camera-capture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that all baseline requirements are met on hardware
+- documentation changes were reviewed against the existing baseline architecture decisions
+Notes:
+- no RTL, constraints, architecture decisions, or filter scope were changed by this documentation-only update
 
 ## Future logging examples
 

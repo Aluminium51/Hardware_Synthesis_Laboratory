@@ -11,6 +11,8 @@ create_clock -add -name clk_100_pin -period 10.00 -waveform {0 5} [get_ports clk
 ## Reset button
 ## =========================================================
 set_property -dict { PACKAGE_PIN U18 IOSTANDARD LVCMOS33 } [get_ports btnC]
+set_property -dict { PACKAGE_PIN T18 IOSTANDARD LVCMOS33 } [get_ports btnU]
+set_property -dict { PACKAGE_PIN U17 IOSTANDARD LVCMOS33 } [get_ports btnD]
 
 ## =========================================================
 ## Debug LEDs
@@ -77,6 +79,8 @@ set_property -dict { PACKAGE_PIN A17 IOSTANDARD LVCMOS33 } [get_ports cam_href]
 set_property -dict { PACKAGE_PIN B15 IOSTANDARD LVCMOS33 } [get_ports cam_vsync]
 set_property -dict { PACKAGE_PIN A16 IOSTANDARD LVCMOS33 } [get_ports cam_pclk]
 create_clock -add -name cam_pclk_pin -period 40.000 -waveform {0 20.000} [get_ports cam_pclk]
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets cam_pclk]
+set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets cam_pclk_IBUF]
 
 set_property -dict { PACKAGE_PIN C15 IOSTANDARD LVCMOS33 } [get_ports cam_xclk]
 set_property -dict { PACKAGE_PIN R18 IOSTANDARD LVCMOS33 } [get_ports cam_pwdn]

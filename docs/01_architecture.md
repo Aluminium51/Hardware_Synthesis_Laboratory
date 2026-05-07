@@ -49,9 +49,10 @@ Responsibilities:
 Responsibilities:
 - deferred option for deriving true video clocks if the simple baseline clocking is not sufficient
 
-Current TASK-007 baseline:
+Completed baseline:
 - VGA timing remains in `clk_100` and advances with a 25 MHz `pixel_ce`
 - camera `XCLK` is generated in the top level with a simple divide-by-4 from `clk_100`
+- live OV7670 video is captured into the framebuffer and displayed through the VGA readout path
 
 ## VGA side
 ### `rtl/vga/vga_timing_640x480.v`
@@ -186,6 +187,7 @@ Used only for buttons if threshold or reset control needs button input.
 
 ### Stage F: full integration
 - live camera -> BRAM -> filter -> VGA
+- hardware validation passed on 2026-05-07 for raw and baseline filtered display modes
 
 ## Debug philosophy
 Bring-up must be staged.

@@ -109,7 +109,7 @@ VGA Monitor
 Basys 3 switches/buttons
    │
    ├── filter mode select
-   ├── threshold control
+   ├── threshold up/down
    └── reset/debug control
 ```
 
@@ -332,7 +332,18 @@ The Basys 3 slide switches select the mode:
 - `sw[1:0] = 10`: negative
 - `sw[1:0] = 11`: threshold
 
-The threshold value is selected with `sw[5:2]`.
+The threshold value is a stored 4-bit register:
+- `btnU`: increase threshold by 1
+- `btnD`: decrease threshold by 1
+- `btnC`: reset system and restore threshold to mid-scale `4'h8`
+
+`sw[4:2]` are currently unused/reserved.
+
+### VGA-only debug pattern
+- `sw[5] = 1`: show the built-in VGA test pattern directly from the base timing path
+- `sw[5] = 0`: show the normal camera/framebuffer display path
+
+This mode is intended to isolate the `FPGA VGA -> VGA-to-HDMI adapter -> monitor` path from camera and framebuffer behavior.
 
 ### Filter 1: grayscale
 Take one RGB pixel and convert it to a luminance-like value.
@@ -485,7 +496,7 @@ Stable TASK-006 interface:
 - inputs: `pclk`, `rst`, `vsync`, `href`, `cam_d[7:0]`
 - outputs: `wr_en`, `wr_addr[16:0]`, `wr_data[11:0]`, `frame_done`, `frame_active`
 
-TASK-006 is simulation-verified as a module-level capture block. It has not yet been wired into the top-level framebuffer path for live display.
+TASK-006 is simulation-verified as a module-level capture block and is wired into the top-level framebuffer path for live display.
 
 ---
 
@@ -535,7 +546,7 @@ Status:
 - Complete as of 2026-04-22.
 - `tb_video_filter_basic.sv` passed for raw, grayscale, negative, threshold, mode switching, and default raw behavior.
 - Top-level Icarus Verilog elaboration passed with switch-controlled filter integration.
-- Hardware live-filter validation is still pending full-system bring-up.
+- Hardware validation passed as part of the completed baseline on 2026-05-07; live filter switching works on the VGA readout path.
 
 ## Stage 4 — SCCB and camera init
 Implement:
@@ -559,8 +570,8 @@ Success condition:
 
 Status:
 - Complete as of 2026-04-22 for the standalone capture block.
-- Capture is now wired into the top-level framebuffer write path for TASK-007.
-- Vivado build and hardware live-video validation are still pending.
+- Capture is wired into the top-level framebuffer write path.
+- Hardware validation passed as part of the completed baseline on 2026-05-07.
 
 ## Stage 6 — Integration cleanup
 Fix:
@@ -765,8 +776,10 @@ That will make final reporting much easier and safer.
 - [x] OV7670 init sequence works in simulation
 - [x] camera capture module works in simulation
 - [x] camera capture is integrated into the top-level framebuffer path
-- [ ] live raw video displays
-- [ ] live filtered video displays
+- [x] debug-pattern camera bring-up path is configured to use OV7670 internal color bars
+- [x] live raw video displays
+- [x] live filtered video displays
+- [x] first complete hardware baseline met as of 2026-05-07
 - [x] simulation exists for major modules (VGA timing, VGA reader/address mapping, filters, SCCB master, camera init, and camera capture)
 - [ ] final block diagram and report materials are prepared
 

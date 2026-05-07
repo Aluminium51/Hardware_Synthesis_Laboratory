@@ -4,11 +4,13 @@
 // Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
 // Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
 // Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
-// Inputs: slide switches select VGA readout filter mode and threshold.
+// Inputs: slide switches select VGA test-pattern/filter mode; buttons adjust threshold.
 // Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
 module top_basys3_ov7670_vga (
     input  wire        clk_100,
     input  wire        btnC,
+    input  wire        btnU,
+    input  wire        btnD,
     input  wire [5:0]  sw,
     output wire        Hsync,
     output wire        Vsync,
@@ -51,8 +53,39 @@ module top_basys3_ov7670_vga (
         end
     endgenerate
 
+    wire       debug_pattern_en = sw_sync[5];
     wire [1:0] filter_mode = sw_sync[1:0];
-    wire [3:0] filter_threshold = sw_sync[5:2];
+
+    wire btnU_sync;
+    wire btnD_sync;
+
+    sync_2ff u_sync_btnU (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (btnU),
+        .q_sync  (btnU_sync)
+    );
+
+    sync_2ff u_sync_btnD (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (btnD),
+        .q_sync  (btnD_sync)
+    );
+
+    localparam integer BTN_DEBOUNCE_BITS = 19;
+
+    reg [BTN_DEBOUNCE_BITS-1:0] btnU_count = {BTN_DEBOUNCE_BITS{1'b0}};
+    reg [BTN_DEBOUNCE_BITS-1:0] btnD_count = {BTN_DEBOUNCE_BITS{1'b0}};
+    reg                         btnU_state = 1'b0;
+    reg                         btnD_state = 1'b0;
+    reg                         btnU_state_d = 1'b0;
+    reg                         btnD_state_d = 1'b0;
+    reg [3:0]                   filter_threshold_reg = 4'h8;
+
+    wire btnU_press = btnU_state && !btnU_state_d;
+    wire btnD_press = btnD_state && !btnD_state_d;
+    wire [3:0] filter_threshold = filter_threshold_reg;
 
     reg [1:0] pixel_div = 2'd0;
     reg [1:0] xclk_div = 2'd0;
@@ -64,6 +97,49 @@ module top_basys3_ov7670_vga (
         end else begin
             pixel_div <= pixel_div + 1'b1;
             xclk_div  <= xclk_div + 1'b1;
+        end
+    end
+
+    always @(posedge clk_100) begin
+        if (rst_sys) begin
+            btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+            btnD_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+            btnU_state <= 1'b0;
+            btnD_state <= 1'b0;
+            btnU_state_d <= 1'b0;
+            btnD_state_d <= 1'b0;
+            filter_threshold_reg <= 4'h8;
+        end else begin
+            btnU_state_d <= btnU_state;
+            btnD_state_d <= btnD_state;
+
+            if (btnU_sync == btnU_state) begin
+                btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+            end else begin
+                btnU_count <= btnU_count + 1'b1;
+
+                if (&btnU_count) begin
+                    btnU_state <= btnU_sync;
+                    btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+                end
+            end
+
+            if (btnD_sync == btnD_state) begin
+                btnD_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+            end else begin
+                btnD_count <= btnD_count + 1'b1;
+
+                if (&btnD_count) begin
+                    btnD_state <= btnD_sync;
+                    btnD_count <= {BTN_DEBOUNCE_BITS{1'b0}};
+                end
+            end
+
+            if (btnU_press && (filter_threshold_reg != 4'hF)) begin
+                filter_threshold_reg <= filter_threshold_reg + 1'b1;
+            end else if (btnD_press && (filter_threshold_reg != 4'h0)) begin
+                filter_threshold_reg <= filter_threshold_reg - 1'b1;
+            end
         end
     end
 
@@ -85,6 +161,15 @@ module top_basys3_ov7670_vga (
         .active_video (active_video),
         .x            (x),
         .y            (y)
+    );
+
+    wire [11:0] pattern_rgb444;
+
+    test_pattern u_test_pattern (
+        .x            (x),
+        .y            (y),
+        .active_video (active_video),
+        .rgb444       (pattern_rgb444)
     );
 
     wire        sccb_start;
@@ -116,7 +201,9 @@ module top_basys3_ov7670_vga (
         .init_error     (init_error)
     );
 
-    ov7670_sccb_master u_ov7670_sccb_master (
+    ov7670_sccb_master #(
+        .SCCB_HALF_PERIOD_CLKS (5000)
+    ) u_ov7670_sccb_master (
         .clk       (clk_100),
         .rst       (rst_sys),
         .start     (sccb_start),
@@ -132,11 +219,12 @@ module top_basys3_ov7670_vga (
         .siod_out  (siod_out)
     );
 
-    assign cam_siod = siod_oe ? siod_out : 1'bz;
+    // SCCB uses an open-drain data line, so only drive low or release.
+    assign cam_siod = (siod_oe && !siod_out) ? 1'b0 : 1'bz;
     assign siod_in  = cam_siod;
 
     assign cam_pwdn  = 1'b0;
-    assign cam_reset = ~rst_sys;
+    assign cam_reset = 1'b1;
 
     wire rst_cam_button;
 
@@ -219,8 +307,11 @@ module top_basys3_ov7670_vga (
         .rgb444_out (filtered_rgb444)
     );
 
-    wire [11:0] display_rgb444 = (init_done && active_video_reader) ?
-                                 filtered_rgb444 : 12'h000;
+    wire [11:0] camera_rgb444 = (init_done && active_video_reader) ?
+                                filtered_rgb444 : 12'h000;
+    wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;
+    wire        display_hsync = debug_pattern_en ? hsync_timing : hsync_reader;
+    wire        display_vsync = debug_pattern_en ? vsync_timing : vsync_reader;
 
     reg [25:0] heartbeat = 26'd0;
 
@@ -271,8 +362,8 @@ module top_basys3_ov7670_vga (
         end
     end
 
-    assign Hsync = hsync_reader;
-    assign Vsync = vsync_reader;
+    assign Hsync = display_hsync;
+    assign Vsync = display_vsync;
 
     assign vgaRed   = display_rgb444[11:8];
     assign vgaGreen = display_rgb444[7:4];

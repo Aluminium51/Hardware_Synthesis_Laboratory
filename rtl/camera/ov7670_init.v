@@ -8,6 +8,7 @@
 module ov7670_init #(
     parameter integer STARTUP_DELAY_CLKS    = 1000000,
     parameter integer POST_RESET_DELAY_CLKS = 1000000,
+    // parameter integer POST_RESET_DELAY_CLKS = 10000000,
     parameter [7:0]   OV7670_DEV_ADDR       = 8'h42
 ) (
     input  wire       clk,
@@ -45,7 +46,7 @@ module ov7670_init #(
     reg        start_seen = 1'b0;
     reg        current_is_last = 1'b0;
 
-    reg  [4:0] rom_index = 5'd0;
+    reg  [7:0] rom_index = 8'd0;
     wire [7:0] rom_reg_addr;
     wire [7:0] rom_reg_data;
     wire       rom_is_last;
@@ -65,7 +66,7 @@ module ov7670_init #(
             startup_delay_count    <= 32'd0;
             post_reset_delay_count <= 32'd0;
             start_seen             <= 1'b0;
-            rom_index              <= 5'd0;
+            rom_index              <= 8'd0;
             current_is_last        <= 1'b0;
             sccb_start             <= 1'b0;
             sccb_reg_addr          <= 8'h00;
@@ -86,7 +87,7 @@ module ov7670_init #(
                         (startup_delay_count >= STARTUP_DELAY_LIMIT)) begin
                         if (start_seen || start_init) begin
                             init_busy <= 1'b1;
-                            rom_index <= 5'd0;
+                            rom_index <= 8'd0;
                             state     <= ST_LOAD_ENTRY;
                         end else begin
                             state <= ST_WAIT_START;
@@ -100,7 +101,7 @@ module ov7670_init #(
                     if (start_init) begin
                         start_seen <= 1'b1;
                         init_busy  <= 1'b1;
-                        rom_index  <= 5'd0;
+                        rom_index  <= 8'd0;
                         state      <= ST_LOAD_ENTRY;
                     end
                 end

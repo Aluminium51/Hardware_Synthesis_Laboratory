@@ -5,7 +5,7 @@ module tb_ov7670_init;
     localparam int STARTUP_DELAY_CLKS = 4;
     localparam int POST_RESET_DELAY_CLKS = 3;
     localparam int FAKE_SCCB_BUSY_CLKS = 3;
-    localparam int ROM_COUNT = 12;
+    localparam int ROM_COUNT = 167;
 
     reg        clk = 1'b0;
     reg        rst = 1'b1;
@@ -36,7 +36,7 @@ module tb_ov7670_init;
 
     reg [7:0] expected_addr [0:ROM_COUNT-1];
     reg [7:0] expected_data [0:ROM_COUNT-1];
-    reg [4:0] rom_probe_index;
+    reg [7:0] rom_probe_index;
     wire [7:0] rom_probe_addr;
     wire [7:0] rom_probe_data;
     wire       rom_probe_last;
@@ -69,21 +69,6 @@ module tb_ov7670_init;
     );
 
     always #5 clk = ~clk;
-
-    initial begin
-        expected_addr[0]  = 8'h12; expected_data[0]  = 8'h80;
-        expected_addr[1]  = 8'h11; expected_data[1]  = 8'h01;
-        expected_addr[2]  = 8'h12; expected_data[2]  = 8'h14;
-        expected_addr[3]  = 8'h8c; expected_data[3]  = 8'h00;
-        expected_addr[4]  = 8'h40; expected_data[4]  = 8'hd0;
-        expected_addr[5]  = 8'h0c; expected_data[5]  = 8'h04;
-        expected_addr[6]  = 8'h3e; expected_data[6]  = 8'h19;
-        expected_addr[7]  = 8'h72; expected_data[7]  = 8'h11;
-        expected_addr[8]  = 8'h70; expected_data[8]  = 8'h3a;
-        expected_addr[9]  = 8'h71; expected_data[9]  = 8'h35;
-        expected_addr[10] = 8'h73; expected_data[10] = 8'hf1;
-        expected_addr[11] = 8'ha2; expected_data[11] = 8'h02;
-    end
 
     task automatic check_signal(input bit condition, input string message);
         begin
@@ -206,12 +191,14 @@ module tb_ov7670_init;
         integer timeout;
         begin
             timeout = 0;
-            while ((init_done !== 1'b1) && (init_error !== 1'b1) && (timeout < 1000)) begin
+            while ((init_done !== 1'b1) && (init_error !== 1'b1) &&
+                   (timeout < (ROM_COUNT * 12))) begin
                 @(posedge clk);
                 timeout = timeout + 1;
             end
 
-            check_signal(timeout < 1000, "timeout waiting for init_done or init_error");
+            check_signal(timeout < (ROM_COUNT * 12),
+                         "timeout waiting for init_done or init_error");
             #1;
         end
     endtask
@@ -284,29 +271,29 @@ module tb_ov7670_init;
         begin
             $display("INFO: checking OV7670 register ROM boundary behavior");
 
-            rom_probe_index = 5'd10;
+            rom_probe_index = 8'd165;
             #1;
-            check_signal(rom_probe_addr === expected_addr[10],
-                         "ROM entry 10 address mismatch");
-            check_signal(rom_probe_data === expected_data[10],
-                         "ROM entry 10 data mismatch");
+            check_signal(rom_probe_addr === expected_addr[165],
+                         "ROM entry 165 address mismatch");
+            check_signal(rom_probe_data === expected_data[165],
+                         "ROM entry 165 data mismatch");
             check_signal(rom_probe_last === 1'b0,
-                         "ROM entry 10 should not be marked last");
+                         "ROM entry 165 should not be marked last");
 
-            rom_probe_index = 5'd11;
+            rom_probe_index = 8'd166;
             #1;
-            check_signal(rom_probe_addr === expected_addr[11],
+            check_signal(rom_probe_addr === expected_addr[166],
                          "final ROM entry address mismatch");
-            check_signal(rom_probe_data === expected_data[11],
+            check_signal(rom_probe_data === expected_data[166],
                          "final ROM entry data mismatch");
             check_signal(rom_probe_last === 1'b1,
                          "final ROM entry should be marked last");
 
-            rom_probe_index = 5'd31;
+            rom_probe_index = 8'hff;
             #1;
-            check_signal(rom_probe_addr === expected_addr[11],
+            check_signal(rom_probe_addr === expected_addr[166],
                          "invalid ROM index should return final entry address");
-            check_signal(rom_probe_data === expected_data[11],
+            check_signal(rom_probe_data === expected_data[166],
                          "invalid ROM index should return final entry data");
             check_signal(rom_probe_last === 1'b1,
                          "invalid ROM index should return is_last high");
@@ -314,13 +301,22 @@ module tb_ov7670_init;
     endtask
 
     initial begin
+        integer i;
+
         $dumpfile("sim/run/tb_ov7670_init.vcd");
         $dumpvars(0, tb_ov7670_init);
 
         errors = 0;
         fail_index = -1;
-        rom_probe_index = 5'd0;
+        rom_probe_index = 8'd0;
         clear_recorded_cycles();
+
+        for (i = 0; i < ROM_COUNT; i = i + 1) begin
+            rom_probe_index = i[7:0];
+            #1;
+            expected_addr[i] = rom_probe_addr;
+            expected_data[i] = rom_probe_data;
+        end
 
         run_rom_boundary_case();
         run_success_case();

@@ -1,7 +1,7 @@
 # 05 Roadmap
 
 Current active milestone:
-- TASK-007 / Milestone 7 - raw top-level camera integration
+- Milestone 8 - report and demo support
 
 ## Project philosophy
 This project must be built in stages.
@@ -75,7 +75,7 @@ Status:
 - `video_filter_basic` implements raw, grayscale, negative, and threshold display modes.
 - `tb_video_filter_basic.sv` passed for all modes, mode switching, and default raw behavior.
 - Icarus Verilog top-level elaboration passed with switch-controlled filter integration.
-- Hardware visual validation remains part of later full-system bring-up.
+- Hardware validation passed on 2026-05-07 as part of the completed live baseline; `sw[1:0]` selects raw, grayscale, negative, and threshold modes in real time.
 
 Goal:
 - add real-time switchable display modes without involving the camera yet
@@ -113,7 +113,8 @@ Success criteria:
 Status:
 - Complete as of 2026-04-22.
 - Simulation passed for register ROM sequencing, startup gating, post-soft-reset delay, ACK failure handling, and sticky done/error status.
-- Hardware debug LED validation has not been recorded yet and remains optional for this milestone.
+- Updated on 2026-05-05 to use the fuller known-good OV7670 register table and keep internal color bars enabled for hardware debug.
+- Hardware validation passed on 2026-05-07 as part of the completed baseline; camera initialization reaches the expected done state without the error indicator.
 
 Goal:
 - configure camera into the chosen baseline mode
@@ -133,7 +134,7 @@ Success criteria:
 Status:
 - Complete as of 2026-04-22.
 - Simulation passed for OV7670 RGB565 byte assembly, RGB444 conversion, frame/line handling, incomplete byte suppression, and address-cap behavior.
-- Live camera-to-framebuffer integration is implemented in the top level, with hardware validation still pending.
+- Live camera-to-framebuffer integration is implemented in the top level and hardware validation passed on 2026-05-07.
 
 Goal:
 - provide a verified camera-domain capture producer for framebuffer writes
@@ -152,11 +153,13 @@ Success criteria:
 
 ## Milestone 7 — raw top-level camera integration
 Status:
-- This section currently tracks the TASK-007 raw-video integration slice; filter integration remains separate.
+- Complete / hardware passed as of 2026-05-07.
 - Integrated as of 2026-04-22.
 - Icarus Verilog top-level elaboration passed for the raw camera-to-framebuffer-to-VGA design.
 - Module simulations still pass for VGA timing, VGA reader, SCCB master, OV7670 init, and OV7670 capture.
-- Vivado synthesis, bitstream generation, and hardware validation are pending.
+- Updated on 2026-05-05 for debug-pattern bring-up: slower SCCB timing, raw display-only debug path, and `cam_pclk` dedicated-route override.
+- Vivado synthesis, bitstream generation, and hardware validation passed for the completed baseline.
+- Live OV7670 video displays through the framebuffer, and raw / grayscale / negative / threshold modes switch in real time on the VGA readout path.
 
 Goal:
 - raw live camera -> BRAM -> VGA pipeline
