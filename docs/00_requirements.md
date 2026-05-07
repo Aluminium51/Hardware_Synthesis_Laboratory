@@ -96,6 +96,16 @@ A baseline build is considered successful only when all of the following are tru
 6. Live camera image is visible on the monitor.
 7. Major modules have testbenches.
 
+## Current baseline status
+The first complete baseline is met as of 2026-05-07.
+
+Validated baseline behavior:
+- Basys 3 hardware locks a monitor to standard `640x480 @ 60 Hz` VGA timing.
+- Live OV7670 video is captured into the single RGB444 framebuffer and displayed as `320x240` content with exact 2x scaling.
+- `sw[1:0]` selects raw, grayscale, negative, and threshold display modes in real time.
+- `btnU` / `btnD` adjust the threshold value, and `sw[5]` remains available as a VGA-only debug pattern override.
+- Module-level simulations remain the verification evidence for VGA timing, VGA reader/addressing, filters, SCCB master, OV7670 init, and camera capture.
+
 ## Risks that should be assumed from the start
 - camera register configuration may be the hardest bring-up step
 - clock-domain bugs can make the image intermittently wrong

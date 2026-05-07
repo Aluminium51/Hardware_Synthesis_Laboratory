@@ -47,8 +47,12 @@ Responsibilities:
 
 ### `ip/clk_wiz_video/`
 Responsibilities:
-- derive VGA pixel clock from board clock
-- derive camera XCLK if driven from FPGA
+- deferred option for deriving true video clocks if the simple baseline clocking is not sufficient
+
+Completed baseline:
+- VGA timing remains in `clk_100` and advances with a 25 MHz `pixel_ce`
+- camera `XCLK` is generated in the top level with a simple divide-by-4 from `clk_100`
+- live OV7670 video is captured into the framebuffer and displayed through the VGA readout path
 
 ## VGA side
 ### `rtl/vga/vga_timing_640x480.v`
@@ -142,8 +146,13 @@ Responsibilities:
 - sample camera bytes in the camera pixel-clock domain
 - assemble one RGB565 pixel from two bytes
 - convert RGB565 to RGB444
-- generate framebuffer write address and write enable
-- reset write pointer at frame boundary
+- generate `wr_en`, `wr_addr[16:0]`, and `wr_data[11:0]` for the framebuffer write port
+- expose `frame_done` and `frame_active` status for later integration/debug logic
+- reset the write pointer at the active-high `VSYNC` frame boundary
+- suppress writes during `VSYNC` and after the final framebuffer address until the next frame
+
+Verification:
+- TASK-006 simulation passed for byte assembly, RGB444 conversion, frame/line guard behavior, and address-cap handling.
 
 ## Utility
 ### `rtl/util/debounce.v`
@@ -178,6 +187,7 @@ Used only for buttons if threshold or reset control needs button input.
 
 ### Stage F: full integration
 - live camera -> BRAM -> filter -> VGA
+- hardware validation passed on 2026-05-07 for raw and baseline filtered display modes
 
 ## Debug philosophy
 Bring-up must be staged.

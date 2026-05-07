@@ -109,7 +109,7 @@ VGA Monitor
 Basys 3 switches/buttons
    │
    ├── filter mode select
-   ├── threshold control
+   ├── threshold up/down
    └── reset/debug control
 ```
 
@@ -327,21 +327,34 @@ That means the stored image remains unchanged, and the selected display mode onl
 
 ### Filter mode selection
 The Basys 3 slide switches select the mode:
-- raw
-- grayscale
-- negative
-- threshold
+- `sw[1:0] = 00`: raw
+- `sw[1:0] = 01`: grayscale
+- `sw[1:0] = 10`: negative
+- `sw[1:0] = 11`: threshold
+
+The threshold value is a stored 4-bit register:
+- `btnU`: increase threshold by 1
+- `btnD`: decrease threshold by 1
+- `btnC`: reset system and restore threshold to mid-scale `4'h8`
+
+`sw[4:2]` are currently unused/reserved.
+
+### VGA-only debug pattern
+- `sw[5] = 1`: show the built-in VGA test pattern directly from the base timing path
+- `sw[5] = 0`: show the normal camera/framebuffer display path
+
+This mode is intended to isolate the `FPGA VGA -> VGA-to-HDMI adapter -> monitor` path from camera and framebuffer behavior.
 
 ### Filter 1: grayscale
 Take one RGB pixel and convert it to a luminance-like value.
 
 Simple hardware-friendly example:
-- `gray = (R + 2*G + B) >> 2`
+- `gray4 = (R + 2*G + B) >> 2`
 
 Then output:
-- `R = gray`
-- `G = gray`
-- `B = gray`
+- `R = gray4`
+- `G = gray4`
+- `B = gray4`
 
 ### Filter 2: negative
 Invert each channel:
@@ -351,10 +364,8 @@ Invert each channel:
 
 ### Filter 3: threshold
 First compute grayscale, then compare against a threshold:
-- if `gray >= threshold` -> white
+- if `gray4 >= threshold` -> white
 - else -> black
-
-Threshold can be set with upper slide switches in the future if desired.
 
 ### Why these filters were chosen
 They are:
@@ -479,7 +490,13 @@ Register/value table for camera init.
 FSM that walks the register table and programs the camera.
 
 ### `ov7670_capture_rgb565.v`
-Captures two bytes per pixel from the OV7670, converts RGB565 to RGB444, and writes to the framebuffer.
+Captures two bytes per pixel from the OV7670 in the camera `pclk` domain, converts RGB565 to RGB444, and emits framebuffer write-side signals.
+
+Stable TASK-006 interface:
+- inputs: `pclk`, `rst`, `vsync`, `href`, `cam_d[7:0]`
+- outputs: `wr_en`, `wr_addr[16:0]`, `wr_data[11:0]`, `frame_done`, `frame_active`
+
+TASK-006 is simulation-verified as a module-level capture block and is wired into the top-level framebuffer path for live display.
 
 ---
 
@@ -497,6 +514,11 @@ Implement:
 Success condition:
 - monitor displays stable output
 
+Status:
+- Complete as of 2026-04-22.
+- Basys 3 hardware displayed stable vertical color bars.
+- `tb_vga_timing.sv` passed timing-counter and sync-window checks.
+
 ## Stage 2 — Framebuffer readout
 Implement:
 - BRAM test image
@@ -505,6 +527,11 @@ Implement:
 Success condition:
 - correct doubled pixels
 - correct addressing
+
+Status:
+- Complete as of 2026-04-22.
+- Basys 3 hardware displayed the framebuffer-backed structured pattern.
+- `tb_vga_reader_320x240.sv` passed address mapping, 2x scaling, blanking, and control-alignment checks.
 
 ## Stage 3 — Filters
 Implement:
@@ -515,6 +542,12 @@ Implement:
 Success condition:
 - switching modes changes display correctly
 
+Status:
+- Complete as of 2026-04-22.
+- `tb_video_filter_basic.sv` passed for raw, grayscale, negative, threshold, mode switching, and default raw behavior.
+- Top-level Icarus Verilog elaboration passed with switch-controlled filter integration.
+- Hardware validation passed as part of the completed baseline on 2026-05-07; live filter switching works on the VGA readout path.
+
 ## Stage 4 — SCCB and camera init
 Implement:
 - SCCB master
@@ -522,8 +555,9 @@ Implement:
 - init FSM
 
 Success condition:
-- camera reaches initialized state
-- debug LEDs show success
+- SCCB master works in simulation
+- OV7670 init ROM/FSM completes in simulation with explicit done/error handling
+- hardware LED validation and live camera output are not proven yet
 
 ## Stage 5 — Camera capture
 Implement:
@@ -532,7 +566,12 @@ Implement:
 - framebuffer writes
 
 Success condition:
-- recognizably correct live image appears
+- module-level simulation proves byte assembly, write pulses, address progression, frame-boundary handling, and overflow suppression
+
+Status:
+- Complete as of 2026-04-22 for the standalone capture block.
+- Capture is wired into the top-level framebuffer write path.
+- Hardware validation passed as part of the completed baseline on 2026-05-07.
 
 ## Stage 6 — Integration cleanup
 Fix:
@@ -554,7 +593,7 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - `tb_vga_timing.sv`
 - `tb_vga_reader_320x240.sv`
 - `tb_video_filter_basic.sv`
-- `tb_sccb_master.sv`
+- `tb_ov7670_sccb_master.sv`
 - `tb_ov7670_init.sv`
 - `tb_ov7670_capture.sv`
 
@@ -588,6 +627,8 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - write enable pulses at the right time
 - address increments correctly
 - frame reset behavior works
+- `frame_done` and `frame_active` behave as defined for integration
+- writes are suppressed during `VSYNC` and after the address cap
 
 ---
 
@@ -725,18 +766,21 @@ That will make final reporting much easier and safer.
 
 # 13. Current baseline target checklist
 
-- [ ] VGA timing generator works on hardware
-- [ ] BRAM-backed 320x240 image displays correctly
-- [ ] 2x scaling to 640x480 works correctly
-- [ ] grayscale filter works
-- [ ] negative filter works
-- [ ] threshold filter works
-- [ ] SCCB master works
-- [ ] OV7670 init sequence works
-- [ ] camera capture works
-- [ ] live raw video displays
-- [ ] live filtered video displays
-- [ ] simulation exists for major modules
+- [x] VGA timing generator works on hardware
+- [x] BRAM-backed 320x240 image displays correctly
+- [x] 2x scaling to 640x480 works correctly
+- [x] grayscale filter works in simulation
+- [x] negative filter works in simulation
+- [x] threshold filter works in simulation
+- [x] SCCB master works in simulation
+- [x] OV7670 init sequence works in simulation
+- [x] camera capture module works in simulation
+- [x] camera capture is integrated into the top-level framebuffer path
+- [x] debug-pattern camera bring-up path is configured to use OV7670 internal color bars
+- [x] live raw video displays
+- [x] live filtered video displays
+- [x] first complete hardware baseline met as of 2026-05-07
+- [x] simulation exists for major modules (VGA timing, VGA reader/address mapping, filters, SCCB master, camera init, and camera capture)
 - [ ] final block diagram and report materials are prepared
 
 ---
