@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // vga_reader_320x240
-// Purpose: map 640x480 VGA coordinates to a 320x240 RGB444 framebuffer.
+// Purpose: map 640x480 VGA coordinates to a 320x240 RGB565 framebuffer.
 // Clock domain: clk_100, advanced only on the 25 MHz pixel_ce.
 // Outputs: framebuffer read address plus pixel-step delayed sync/control/RGB.
 // Assumption: rd_data is valid one pixel_ce step after rd_addr is presented.
@@ -14,12 +14,12 @@ module vga_reader_320x240 (
     input  wire        hsync_in,
     input  wire        vsync_in,
     input  wire        active_video_in,
-    input  wire [11:0] rd_data,
+    input  wire [15:0] rd_data,
     output reg  [16:0] rd_addr,
     output reg         hsync_out,
     output reg         vsync_out,
     output reg         active_video_out,
-    output reg  [11:0] rgb444_out
+    output reg  [15:0] rgb565_out
 );
 
     wire [8:0] src_x = vga_x[9:1];
@@ -43,7 +43,7 @@ module vga_reader_320x240 (
             hsync_out         <= 1'b1;
             vsync_out         <= 1'b1;
             active_video_out  <= 1'b0;
-            rgb444_out        <= 12'h000;
+            rgb565_out        <= 16'h0000;
         end else if (pixel_ce) begin
             rd_addr           <= next_rd_addr;
             hsync_pipe        <= hsync_in;
@@ -52,7 +52,7 @@ module vga_reader_320x240 (
             hsync_out         <= hsync_pipe;
             vsync_out         <= vsync_pipe;
             active_video_out  <= active_video_pipe;
-            rgb444_out        <= active_video_pipe ? rd_data : 12'h000;
+            rgb565_out        <= active_video_pipe ? rd_data : 16'h0000;
         end
     end
 

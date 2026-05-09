@@ -13,7 +13,7 @@ OV7670 Camera
    └── framebuffer write port
             │
             ▼
-      BRAM framebuffer (raw RGB444)
+      BRAM framebuffer (raw RGB565)
             │
             └── framebuffer read port in VGA domain
                     │
@@ -87,7 +87,7 @@ Responsibilities:
 Responsibilities:
 - implement or wrap true dual-port BRAM
 - support independent write and read clocks
-- store raw RGB444 pixels
+- store raw RGB565 pixels
 
 Write side:
 - camera domain
@@ -99,7 +99,7 @@ Depth target:
 - 76,800 words
 
 Width target:
-- 12 bits per pixel
+- 16 bits per pixel
 
 ## Filters
 ### `rtl/filters/video_filter_basic.v`
@@ -112,12 +112,12 @@ Responsibilities:
 - remain purely on the readout path
 
 Inputs:
-- `rgb444_in`
+- `rgb565_in`
 - `mode`
 - `threshold`
 
 Output:
-- `rgb444_out`
+- `rgb565_out`
 
 ### `rtl/filters/edge_sobel.v`
 Deferred.
@@ -145,14 +145,30 @@ Responsibilities:
 Responsibilities:
 - sample camera bytes in the camera pixel-clock domain
 - assemble one RGB565 pixel from two bytes
-- convert RGB565 to RGB444
-- generate `wr_en`, `wr_addr[16:0]`, and `wr_data[11:0]` for the framebuffer write port
+- preserve RGB565 for framebuffer storage
+- generate `wr_en`, `wr_addr[16:0]`, and `wr_data[15:0]` for the framebuffer write port
+- support a per-line left-pixel skip for controlled debug only; the integrated baseline captures all 320 columns with no left crop
 - expose `frame_done` and `frame_active` status for later integration/debug logic
+- expose debug-only line-length flags for hardware diagnosis of camera line width and line-start artifacts
 - reset the write pointer at the active-high `VSYNC` frame boundary
 - suppress writes during `VSYNC` and after the final framebuffer address until the next frame
 
 Verification:
-- TASK-006 simulation passed for byte assembly, RGB444 conversion, frame/line guard behavior, and address-cap handling.
+- TASK-006 simulation passed for byte assembly, bounded 320x240 capture, frame/line guard behavior, line-length diagnostics, and address-cap handling.
+
+### `rtl/camera/ov7670_capture_rgb565_2x2_avg.v`
+Responsibilities:
+- support the reset-sampled `sw[7]=1` full-VGA averaging experiment
+- sample a full-VGA RGB565 camera stream in the camera pixel-clock domain
+- keep one previous 640-pixel source line in FPGA memory
+- average each 2x2 source block into one RGB565 output pixel
+- write the averaged result into the existing 320x240 framebuffer interface
+- optionally clamp right-edge destination columns to the nearest valid averaged pixel for debug experiments
+
+This keeps the baseline framebuffer architecture unchanged while allowing a fair test of FPGA-side averaging against the OV7670 internal scaler profile.
+
+Verification:
+- A focused simulation reduces a 4x4 RGB565 source frame into 2x2 averaged framebuffer writes and checks write addresses, averaged pixel values, frame completion, and line diagnostics.
 
 ## Utility
 ### `rtl/util/debounce.v`

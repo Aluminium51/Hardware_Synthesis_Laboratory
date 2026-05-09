@@ -284,6 +284,448 @@ Human review performed:
 Notes:
 - no RTL, constraints, architecture decisions, or filter scope were changed by this documentation-only update
 
+### [2026-05-07]
+Tool: ChatGPT Codex
+Used for:
+- planned and implemented live-camera image robustness refinements
+- changed the internal video path from RGB444 framebuffer storage to RGB565 framebuffer storage
+- added bounded 320x240 camera capture, profile-selectable OV7670 initialization, low-noise and lower-speed diagnostic profiles, and RGB565 filter precision
+- updated focused testbenches and documentation for the refined baseline
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565.v`
+- `rtl/camera/ov7670_init.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `rtl/filters/video_filter_basic.v`
+- `rtl/memory/framebuffer_bram.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/vga/vga_reader_320x240.v`
+- `sim/tb/tb_ov7670_capture.sv`
+- `sim/tb/tb_ov7670_init.sv`
+- `sim/tb/tb_vga_reader_320x240.sv`
+- `sim/tb/tb_video_filter_basic.sv`
+- `docs/`
+Human review performed:
+- repository owner reported that color bars are clean but live camera output is noisy
+- implementation keeps the baseline single-framebuffer architecture and adds a lower-speed mode only as a diagnostic profile
+Notes:
+- hardware should be retested in profile order: color bars, live auto, live low-noise, then lower-speed diagnostic only if needed
+
+### [2026-05-08]
+Tool: ChatGPT Codex
+Used for:
+- implemented the reset-sampled color-bar profile and left-edge stripe debug plan
+- changed the OV7670 color-bar profile to write the COM17 color-bar enable bit
+- configured the integrated capture path to skip the first 8 source pixels per line
+- tightened focused testbenches for 8-pixel left-skip row alignment and color-bar profile data
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_capture.sv`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-006-camera-capture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that `sw[4:3]=11` still showed live video and that a left-edge color stripe remained after swapping camera and board
+- repository owner requested reset-sampled profile behavior and a cautious 8-pixel crop while watching for tilted/distorted output
+Notes:
+- hardware should be retested by holding `sw[4:3]=11`, pressing/releasing `btnC`, then confirming camera color bars before returning to live profiles
+- if the crop introduces tilt, revert only the skip amount and debug camera windowing separately
+- local simulation could not be rerun in this shell because `iverilog`, `vvp`, Vivado, and common fallback Verilog tools were not on PATH
+
+## 2026-05-08 — Restore full-width camera capture after crop debug
+Tool: ChatGPT Codex
+Used for:
+- identified that the integrated `SKIP_LEFT_PIXELS=8` setting could leave the final 8 framebuffer columns unwritten when the camera outputs only 320 valid pixels per line
+- restored the top-level capture instance to `SKIP_LEFT_PIXELS=0`
+- updated documentation to treat left crop as a debug-only experiment, not the baseline
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-006-camera-capture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the crop reduced the left color-bar issue but introduced a right-side black band on multiple boards/cameras
+Notes:
+- existing focused Icarus simulations were rerun locally after setting `TMP`/`TEMP` to `sim/run`
+- the left-edge stripe remains a separate follow-up debug target for camera windowing, byte phase, or register-profile behavior
+
+## 2026-05-08 — Camera line-length diagnostics for left stripe
+Tool: ChatGPT Codex
+Used for:
+- added debug-only line-length flags to `ov7670_capture_rgb565`
+- mapped `sw[2]` to a temporary LED diagnostic view without changing displayed pixels
+- extended the capture testbench for short, exact-width, width+1, and width+8 line cases
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_capture.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-003-basic-filters.md`
+- `docs/tasks/TASK-006-camera-capture.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner confirmed `sw[5]` debug pattern is clean while live camera mode still shows the left color stripe
+Notes:
+- with `sw[2]=1`, LEDs report line seen, line >=320, line >=321, and line >=328
+- compare live and color-bar profiles before choosing a permanent capture offset or OV7670 windowing fix
+
+## 2026-05-08 — OV7670 horizontal window shift for left stripe
+Tool: ChatGPT Codex
+Used for:
+- interpreted `sw[2]` diagnostics showing exactly 320 completed pixels per line
+- shifted OV7670 horizontal window right by 8 source pixels using `HSTART=8'h14` and `HSTOP=8'h02`
+- added an explicit init testbench check for the horizontal window entries
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported `sw[2]` diagnostics as LED0 on, LED1 on, LED2 off, LED3 off
+Notes:
+- this avoids FPGA-side crop because the line-length diagnostic indicates there are no spare post-320 pixels
+- if the stripe remains, the next window adjustment should be another 8-pixel ROM shift rather than capture crop
+
+## 2026-05-08 — Increase OV7670 horizontal window shift
+Tool: ChatGPT Codex
+Used for:
+- increased the OV7670 horizontal window shift from 8 to 16 source pixels after hardware showed the stripe was smaller and no right-side blanking appeared
+- updated the explicit init testbench expectations for `HSTART=8'h15` and `HSTOP=8'h03`
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the 8-pixel camera-window shift reduced the left stripe and did not reintroduce the right-side black band
+Notes:
+- FPGA capture remains full-width with `SKIP_LEFT_PIXELS=0`
+- if a stripe remains after this change, repeat the same +8 source-pixel ROM shift cautiously
+
+## 2026-05-08 — Add one-pixel OV7670 window trim
+Tool: ChatGPT Codex
+Used for:
+- changed OV7670 `HREF` low-bit packing from `8'hB6` to `8'hBF` to add a one-source-pixel window shift after the 16-pixel adjustment nearly removed the stripe
+- kept `HSTART=8'h15` and `HSTOP=8'h03`
+- updated the explicit init testbench expectations for the 17-pixel total shift
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the stripe was almost gone after the 16-pixel window shift
+Notes:
+- FPGA capture remains full-width with `SKIP_LEFT_PIXELS=0`
+- this is a one-pixel camera-window trim, not an FPGA crop
+
+## 2026-05-08 — Add one-pixel OV7670 vertical window trim
+Tool: ChatGPT Codex
+Used for:
+- changed OV7670 `VREF` low-bit packing from `8'h0A` to `8'h09` to shift the camera window up by one source pixel
+- kept `VSTART=8'h02` and `VSTOP=8'h7A`
+- updated the explicit init testbench expectations for the horizontal and vertical window entries
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported a one-line bright artifact near the top edge and requested a small upward shift
+Notes:
+- FPGA capture remains full-height with `SKIP_TOP_LINES=0`
+- this is a one-pixel camera-window trim, not an FPGA crop
+
+## 2026-05-08 - Move OV7670 vertical window with high-bit registers
+Tool: ChatGPT Codex
+Used for:
+- replaced the ineffective `VREF` low-bit vertical trim with a visible high-bit window step
+- changed OV7670 `VSTART` from `8'h02` to `8'h03` and `VSTOP` from `8'h7A` to `8'h7B`
+- restored `VREF=8'h0A` to the known-good base value
+- updated the explicit init testbench expectations and bring-up notes
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that sweeping the `VREF` value between `8'h0F` and `8'h06` caused no visible vertical movement and the bright top-edge line persisted
+Notes:
+- FPGA capture remains full-height with `SKIP_TOP_LINES=0`
+- this is a camera-window adjustment, not an FPGA-side top crop
+
+## 2026-05-08 - Add one more source-pixel horizontal window shift
+Tool: ChatGPT Codex
+Used for:
+- shifted the OV7670 horizontal window one more source pixel after hardware showed the remaining stripe was at the edge
+- changed `HREF` from `8'hBF` to `8'h80` to wrap the horizontal low-bit packing
+- changed `HSTART` from `8'h15` to `8'h16` and `HSTOP` from `8'h03` to `8'h04`
+- updated the explicit init testbench expectations and bring-up notes for the 18-pixel total horizontal shift
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the horizontal artifact is right at the edge and should disappear with one more tiny shift
+Notes:
+- FPGA capture remains full-width with `SKIP_LEFT_PIXELS=0`
+- this is a camera-window adjustment, not an FPGA-side crop
+
+## 2026-05-08 - Add another one-source-pixel horizontal window shift
+Tool: ChatGPT Codex
+Used for:
+- shifted the OV7670 horizontal window one more source pixel after the edge artifact remained
+- changed `HREF` from `8'h80` to `8'h89` while keeping `HSTART=8'h16` and `HSTOP=8'h04`
+- updated the explicit init testbench expectations and bring-up notes for the 19-pixel total horizontal shift
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the horizontal artifact was still visible after the 18-pixel shift and requested a little more shift
+Notes:
+- FPGA capture remains full-width with `SKIP_LEFT_PIXELS=0`
+- this is a camera-window adjustment, not an FPGA-side crop
+
+## 2026-05-08 - Increase vertical window skip for persistent bright line
+Tool: ChatGPT Codex
+Used for:
+- shifted the OV7670 vertical window one more visible high-bit step after the bright horizontal line remained with the lens covered
+- changed `VSTART` from `8'h03` to `8'h04` and `VSTOP` from `8'h7B` to `8'h7C`
+- kept `VREF=8'h0A`, because prior `VREF` sweeps did not visibly move the image
+- updated the explicit init testbench expectations and bring-up notes for the two-step vertical window shift
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the bright horizontal line remains even when the camera lid is fully closed, making scene content an unlikely cause
+Notes:
+- FPGA capture remains full-height with `SKIP_TOP_LINES=0`
+- this is a camera-window adjustment, not an FPGA-side top crop
+
+## 2026-05-08 - Annotate OV7670 register ROM for tuning
+Tool: ChatGPT Codex
+Used for:
+- added inline comments to every OV7670 register ROM entry
+- marked known control registers for windowing, gain, auto-exposure, white balance, matrix, saturation, denoise, clock, and color-bar tuning
+- marked uncertain hardware-tested reference-table values as reserved/reference tuning so future edits can be made cautiously
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported remaining image noise and color inaccuracy and asked for the ROM table to be commented for manual fine tuning
+Notes:
+- no register values or behavior were changed by this annotation update
+- tune one register or profile field at a time and press `btnC` after programming so the camera reloads the SCCB table
+
+## 2026-05-08 - Add averaged-QVGA OV7670 scaling diagnostic profile
+Tool: ChatGPT Codex
+Used for:
+- added profile-dependent OV7670 scaling/DCW register values for `sw[4:3]=10`
+- kept stable live and color-bar profiles on the previous scaling register values
+- updated init testbench checks for profile-specific `COM3`, `COM14`, `SCALING_XSC`, `SCALING_YSC`, `SCALING_DCWCTR`, `SCALING_PCLK_DIV`, and `SCALING_PCLK_DELAY`
+- documented the averaged-QVGA diagnostic workflow
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that changing only `SCALING_DCWCTR` from `8'h11` to `8'h22` distorted the image into the upper half of the display
+- repository owner requested an averaged downsampling experiment to reduce live-camera noise
+Notes:
+- this original experiment was first isolated to `sw[4:3]=10`; a later update moved it to `sw[6]=1, sw[4:3]=00` for fair A/B testing
+- if geometry distorts, compare `sw[6]=0, sw[4:3]=00` and `sw[6]=1, sw[4:3]=00` before changing capture logic
+
+## 2026-05-08 - Move averaged-QVGA experiment to separate A/B profile
+Tool: ChatGPT Codex
+Used for:
+- widened the camera profile path from 2 bits to 3 bits
+- mapped reset-sampled `{sw[6], sw[4:3]}` into the OV7670 ROM profile selector
+- restored `sw[4:3]=10` as the low-speed diagnostic profile with stable scaler geometry
+- moved the averaged-QVGA DCW/scaler settings to `sw[6]=1, sw[4:3]=00` so it uses live-auto exposure, gain, and clock tuning
+- updated focused init testbench checks and switch documentation
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/camera/ov7670_init.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner requested an honest A/B test because the previous `sw[4:3]=10` averaged experiment also used lower frame rate and slower shutter behavior
+Notes:
+- compare `sw[6]=0, sw[4:3]=00` against `sw[6]=1, sw[4:3]=00`, pressing `btnC` after switch changes
+- `sw[4:3]=10` remains available as the lower-speed diagnostic
+
+## 2026-05-09 - Add full-VGA FPGA-side 2x2 averaging experiment
+Tool: ChatGPT Codex
+Used for:
+- added a separate reset-sampled `sw[7]=1, sw[6]=0, sw[4:3]=00` full-VGA camera profile
+- added `ov7670_capture_rgb565_2x2_avg`, which uses one previous-line buffer to average 2x2 RGB565 source blocks into the existing 320x240 framebuffer
+- wired top-level framebuffer writes through a capture-path mux so the stable QVGA capture remains available unchanged
+- added focused simulation coverage for the new averaging capture path and updated OV7670 init profile checks
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565_2x2_avg.v`
+- `rtl/camera/ov7670_init.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `sim/tb/tb_ov7670_capture_2x2_avg.sv`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that the OV7670 internal averaging/scaler profile showed almost no visible noise improvement and asked whether full-resolution camera output could be averaged on the board
+Notes:
+- the experiment does not allocate a full 640x480 framebuffer; it uses only a 640-pixel previous-line buffer before writing the existing framebuffer
+- press `btnC` after changing `sw[7]`, `sw[6]`, or `sw[4:3]` so the SCCB ROM profile reloads
+
+## 2026-05-09 - Apply tuned window to full-VGA averaging profile
+Tool: ChatGPT Codex
+Used for:
+- updated the `sw[7]` full-VGA FPGA-side averaging profile to use the same tuned horizontal and vertical OV7670 window shifts as the stable live profile
+- updated the OV7670 init testbench expectations and bring-up documentation
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that `sw[7]` improved noise strongly but brought back the left blue bar and top bright line
+Notes:
+- this keeps COM7 full-VGA output and FPGA 2x2 averaging unchanged; only the camera read window changes
+- hardware should retest `sw[7]=1`, `sw[6]=0`, `sw[4:3]=00`, then press `btnC`
+
+## 2026-05-09 - Clamp sw7 right-edge averaging artifact
+Tool: ChatGPT Codex
+Used for:
+- added optional right-edge destination-column clamping to the full-resolution FPGA-side 2x2 averaging capture module
+- configured the top-level `sw[7]` averaging instance to clamp the final 10 destination columns to the nearest valid averaged pixel
+- extended the averaging capture testbench to verify both unclamped and clamped output behavior
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565_2x2_avg.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_capture_2x2_avg.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that the tuned `sw[7]` profile removed the top bright line but introduced a weird averaged bar on the right edge
+Notes:
+- default, `sw6`, and stable capture modes are unaffected because the clamp parameter defaults to zero and is only enabled on the top-level `sw7` averaging instance
+- hardware should retest `sw[7]=1`, `sw[6]=0`, `sw[4:3]=00`, then press `btnC`
+
+## 2026-05-09 - Replace sw7 clamp with horizontal window A/B variants
+Tool: ChatGPT Codex
+Used for:
+- changed the full-VGA averaging capture selection so all reset-sampled `sw[7]=1` profiles use the FPGA-side 2x2 averaging path
+- added full-VGA horizontal window variants on `sw[4:3]` for 19, 16, 8, and 0 source-pixel shifts while keeping the tuned vertical window
+- disabled the top-level right-edge clamp so hardware can compare real camera-window outputs instead of a repeated edge strip
+- updated OV7670 init tests and bring-up documentation
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the clamp changed the right-edge artifact into a visible blended/repeated strip
+Notes:
+- test `sw[7]=1`, `sw[6]=0`, and each `sw[4:3]` value, pressing `btnC` after each change
+- choose the variant that best balances the left blue bar against the right-edge artifact
+
+## 2026-05-09 - Promote sw7 8-pixel full-VGA window
+Tool: ChatGPT Codex
+Used for:
+- updated the `sw[7]=1, sw[4:3]=00` full-VGA averaging profile to use the hardware-selected 8-source-pixel horizontal window
+- kept `sw[4:3]=10` as a duplicate known-good 8-pixel comparison profile
+- updated init test expectations and bring-up documentation
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+Human review performed:
+- repository owner reported `00` still showed the right bar, `01` reduced it by half, `10` removed it, and `11` also removed the right bar but started showing the left blue bar
+Notes:
+- `sw[7]=1, sw[4:3]=00` is now the practical default for full-VGA FPGA-side averaging
+- press `btnC` after changing switch positions so the OV7670 reloads the selected SCCB profile
+
+## 2026-05-09 - OV7670 noise register research report
+Tool: ChatGPT Codex
+Used for:
+- researched public OV7670 register tables and register-description sources for noise and color tuning
+- compared likely noise-related registers against the current project ROM values
+- wrote a documentation-only tuning report for future hardware A/B profiles
+Files affected:
+- `docs/ov7670_noise_register_research.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported full-VGA FPGA averaging works and requested research before the next register-tuning implementation
+Notes:
+- no RTL was changed by this report
+- recommended next tests focus on `COM16`, `COM9`, and `SATCTR` before changing matrix/AWB registers
+
 ## Future logging examples
 
 ### Example for RTL generation

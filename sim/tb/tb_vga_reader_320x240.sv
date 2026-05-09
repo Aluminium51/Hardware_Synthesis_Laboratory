@@ -13,13 +13,13 @@ module tb_vga_reader_320x240;
     reg        hsync_in = 1'b1;
     reg        vsync_in = 1'b1;
     reg        active_video_in = 1'b0;
-    reg [11:0] rd_data = 12'h000;
+    reg [15:0] rd_data = 16'h0000;
 
     wire [16:0] rd_addr;
     wire        hsync_out;
     wire        vsync_out;
     wire        active_video_out;
-    wire [11:0] rgb444_out;
+    wire [15:0] rgb565_out;
 
     int errors;
 
@@ -37,7 +37,7 @@ module tb_vga_reader_320x240;
         .hsync_out        (hsync_out),
         .vsync_out        (vsync_out),
         .active_video_out (active_video_out),
-        .rgb444_out       (rgb444_out)
+        .rgb565_out       (rgb565_out)
     );
 
     always #5 clk_100 = ~clk_100;
@@ -62,9 +62,9 @@ module tb_vga_reader_320x240;
         end
     endfunction
 
-    function automatic [11:0] mem_word(input [16:0] addr);
+    function automatic [15:0] mem_word(input [16:0] addr);
         begin
-            mem_word = addr[11:0] ^ 12'h5a5;
+            mem_word = {addr[15:0] ^ 16'h5a5a};
         end
     endfunction
 
@@ -125,10 +125,10 @@ module tb_vga_reader_320x240;
         input string label
     );
         reg [16:0] exp_addr;
-        reg [11:0] exp_rgb;
+        reg [15:0] exp_rgb;
         begin
             exp_addr = expected_addr(x_value, y_value, active_value);
-            exp_rgb = active_value ? mem_word(exp_addr) : 12'h000;
+            exp_rgb = active_value ? mem_word(exp_addr) : 16'h0000;
 
             check_signal(active_video_out === active_value,
                          $sformatf("%s active_video_out misaligned", label));
@@ -136,9 +136,9 @@ module tb_vga_reader_320x240;
                          $sformatf("%s hsync_out misaligned", label));
             check_signal(vsync_out === vsync_value,
                          $sformatf("%s vsync_out misaligned", label));
-            check_signal(rgb444_out === exp_rgb,
-                         $sformatf("%s rgb expected 0x%03h got 0x%03h",
-                                   label, exp_rgb, rgb444_out));
+            check_signal(rgb565_out === exp_rgb,
+                         $sformatf("%s rgb expected 0x%04h got 0x%04h",
+                                   label, exp_rgb, rgb565_out));
         end
     endtask
 
@@ -151,7 +151,7 @@ module tb_vga_reader_320x240;
 
         present_pixel(10'd0, 10'd0, 1'b1, 1'b1, 1'b1, "(0,0)");
         check_signal(active_video_out === 1'b0, "pipeline should start blank");
-        check_signal(rgb444_out === 12'h000, "pipeline should start black");
+        check_signal(rgb565_out === 16'h0000, "pipeline should start black");
 
         present_pixel(10'd1, 10'd0, 1'b1, 1'b0, 1'b1, "(1,0)");
         check_output_for_pixel(10'd0, 10'd0, 1'b1, 1'b1, 1'b1,

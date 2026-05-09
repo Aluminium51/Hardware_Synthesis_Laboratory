@@ -3,11 +3,15 @@
 ## Status
 Complete / simulation passed.
 
-Date updated: 2026-05-05
+Date updated: 2026-05-09
 
 Verified behavior:
 - `ov7670_reg_rom.v` now exposes a deterministic extended RGB565/QVGA startup table derived from the known-good hardware reference design.
 - The final ROM entry keeps OV7670 internal color bars enabled so hardware bring-up can target a stable debug pattern before switching to live video.
+- The horizontal window is shifted right by 19 source pixels using `HSTART=8'h16`, `HSTOP=8'h04`, and `HREF=8'h89` low-bit packing to address the observed left-edge stripe while preserving 320 captured pixels per line.
+- The vertical window is shifted up by two visible high-bit window steps using `VSTART=8'h04`, `VSTOP=8'h7C`, and the known-good `VREF=8'h0A` low-bit packing to address the observed bright top-edge line.
+- `sw[6]=1, sw[4:3]=00` now selects an averaged-QVGA A/B profile that keeps live-auto exposure/gain/clock tuning while changing `COM3`, `COM14`, `SCALING_XSC`, `SCALING_YSC`, `SCALING_DCWCTR`, and `SCALING_PCLK_DIV` together instead of changing `SCALING_DCWCTR` alone.
+- `sw[7]=1` now selects full-VGA RGB profiles for FPGA-side 2x2 averaging; it disables COM7 QVGA mode, keeps the tuned vertical edge-skip window, and defaults to the hardware-selected 8-source-pixel horizontal shift.
 - Invalid ROM indices return the final valid entry with `is_last=1`.
 - `ov7670_init.v` waits for startup delay and explicit `start_init` before issuing SCCB traffic.
 - The init FSM emits one `sccb_start` pulse per ROM entry and holds transaction fields stable while SCCB is busy.

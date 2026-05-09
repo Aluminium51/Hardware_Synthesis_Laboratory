@@ -7,7 +7,8 @@ Date completed: 2026-04-22
 
 Implemented behavior:
 - `ov7670_capture_rgb565.v` captures OV7670 RGB565 bytes in the `pclk` domain only.
-- RGB565 is assembled MSB byte first and converted to RGB444 by truncation.
+- RGB565 is assembled MSB byte first and stored as RGB565 in the framebuffer.
+- Capture now uses explicit `FRAME_WIDTH=320` and `FRAME_HEIGHT=240` bounds so extra camera pixels or lines do not shift the stored frame.
 - `wr_en`, `wr_addr`, and `wr_data` are emitted as a clean framebuffer write-side interface.
 - `wr_addr` holds when no write occurs and accepted writes are addressed linearly from zero.
 - `VSYNC` is treated as an active-high frame-boundary signal for the baseline simulation model.
@@ -16,10 +17,12 @@ Implemented behavior:
 - `wr_en` is forced low on cycles sampled with `VSYNC=1`.
 - Incomplete byte pairs are cleared at line/frame boundaries and never produce writes.
 - Address overflow is handled by suppressing writes after the final framebuffer address until the next frame boundary.
+- The capture module keeps `SKIP_LEFT_PIXELS` and `SKIP_TOP_LINES` parameters for controlled debug, but the integrated baseline now uses `SKIP_LEFT_PIXELS=0` so all 320 framebuffer columns are written.
+- Debug-only line-length flags report whether completed-pixel lines have been seen and whether any line reached 320, 321, or 328 pixels in the hardware baseline.
 
 Verification:
-- `tb_ov7670_capture.sv` passed with Icarus Verilog using `-g2012`.
-- Simulation covered short valid line capture, line gaps, frame-boundary reset, incomplete byte-pair suppression, explicit `frame_active` behavior, `wr_en=0` during `VSYNC`, `wr_addr` hold behavior, and address-cap suppression.
+- `tb_ov7670_capture.sv` passed with Icarus Verilog using `-g2012` before the 8-pixel crop test update.
+- The testbench now covers short valid line capture, line gaps, frame-boundary reset, incomplete byte-pair suppression, explicit `frame_active` behavior, `wr_en=0` during `VSYNC`, `wr_addr` hold behavior, address-cap suppression, left-skip alignment across two lines for debug-only crop experiments, and line-length debug flags.
 - VCD output is generated at `sim/run/tb_ov7670_capture.vcd`.
 - Hardware validation passed on 2026-05-07 as part of the completed baseline; live OV7670 pixels are captured into the framebuffer and displayed through the VGA read path.
 
@@ -30,9 +33,9 @@ Next task:
 - `TASK-007-top-integration.md`
 
 ## Purpose
-Implement the OV7670 pixel-capture path that converts the camera's parallel RGB565 stream into framebuffer-compatible RGB444 write transactions.
+Implement the OV7670 pixel-capture path that converts the camera's parallel RGB565 byte stream into framebuffer-compatible RGB565 write transactions.
 
-This task is the first **data-plane** camera milestone. It does **not** configure the camera registers directly, does **not** generate VGA timing, and does **not** add filters. Its purpose is to prove that the FPGA can correctly observe `PCLK`, `HREF`, `VSYNC`, and `D[7:0]`, assemble camera bytes into pixels, convert RGB565 to RGB444, and generate clean framebuffer write-side signals.
+This task is the first **data-plane** camera milestone. It does **not** configure the camera registers directly, does **not** generate VGA timing, and does **not** add filters. Its purpose is to prove that the FPGA can correctly observe `PCLK`, `HREF`, `VSYNC`, and `D[7:0]`, assemble camera bytes into RGB565 pixels, and generate clean framebuffer write-side signals.
 
 This module will later become the write-side producer for the existing framebuffer interface used by the VGA display path.
 
@@ -45,7 +48,7 @@ Create a synthesizable camera-capture module that:
 1. Samples OV7670 output bytes in the camera pixel domain
 2. Detects valid frame/line regions from `VSYNC` and `HREF`
 3. Combines two consecutive 8-bit transfers into one RGB565 pixel
-4. Converts RGB565 to RGB444
+4. Stores the completed RGB565 pixel
 5. Emits framebuffer write-side signals:
    - `wr_en`
    - `wr_addr`
@@ -80,7 +83,8 @@ That separation is critical. Do not debug camera pixel capture and top-level liv
 - pixel capture in the camera `PCLK` domain
 - `VSYNC` / `HREF` handling
 - two-byte RGB565 assembly
-- RGB565 to RGB444 conversion
+- RGB565 framebuffer write data
+- explicit 320x240 capture bounds
 - linear framebuffer write addressing
 - frame reset behavior
 - simulation testbench with a synthetic camera stream
@@ -131,13 +135,17 @@ No helper RTL files were added for the completed baseline.
 ### Outputs
 - `wr_en`
 - `wr_addr[16:0]`
-- `wr_data[11:0]`
+- `wr_data[15:0]`
 - `frame_done`
 - `frame_active`
+- `dbg_line_seen`
+- `dbg_line_ge_width`
+- `dbg_line_ge_width_plus_1`
+- `dbg_line_ge_width_plus_extra`
 
 ### Non-interface notes
 - `capture_error` was not implemented for TASK-006.
-- No debug-only outputs are exposed as stable ports.
+- Debug-only outputs are exposed for hardware diagnosis and should not drive baseline pixel behavior.
 - Internal signals such as `byte_phase` may still be inspected hierarchically in simulation if needed.
 
 ---
@@ -180,7 +188,7 @@ Implemented policy:
 - `byte_phase = 0`: latch first byte
 - `byte_phase = 1`: latch second byte, combine into full RGB565 pixel
 - only after the second byte is captured:
-  - compute RGB444
+  - present RGB565 write data
   - assert `wr_en` for one `pclk` cycle
   - present valid `wr_addr`
   - present valid `wr_data`
@@ -212,23 +220,14 @@ Assume OV7670 is already configured for:
 That assumption is consistent with the conservative initialization plan used in TASK-005 and with the OV7670’s documented support for RGB565 and scaled output modes. citeturn200834search1turn200834search0
 
 ## Output format
-Framebuffer write data must be RGB444:
-- `wr_data[11:8]` = red
-- `wr_data[7:4]`  = green
-- `wr_data[3:0]`  = blue
+Framebuffer write data is RGB565:
+- `wr_data[15:11]` = red
+- `wr_data[10:5]`  = green
+- `wr_data[4:0]`   = blue
 
 ## Conversion rule
-Use simple truncation for the first baseline:
-
-```text
-R4 = RGB565[15:12]
-G4 = RGB565[10:7]
-B4 = RGB565[4:1]
-```
-
-This is intentionally simple and deterministic.
-
-Do not implement rounding or color correction in this task.
+No capture-side color-depth conversion is performed in the refined baseline.
+The completed RGB565 pixel is written directly to the framebuffer.
 
 ---
 
@@ -296,7 +295,7 @@ Use names like:
 - `byte_phase`
 - `first_byte`
 - `rgb565_word`
-- `rgb444_pixel`
+- `rgb565_pixel`
 - `wr_addr`
 - `wr_en`
 - `frame_active`
@@ -340,7 +339,7 @@ Verify:
 - one `wr_en` pulse per completed pixel
 - correct `wr_addr` sequence starting at 0
 - correct RGB565 assembly
-- correct RGB444 truncation
+- correct RGB565 stored write data
 
 ### Case 2 — line gap handling
 Drive:
@@ -456,7 +455,7 @@ TASK-006 is complete only when all of the following are true:
 
 1. `ov7670_capture_rgb565.v` exists and is synthesizable
 2. the module captures two 8-bit camera transfers into one RGB565 pixel
-3. RGB565 is converted to RGB444 correctly
+3. RGB565 is stored correctly
 4. one valid framebuffer write pulse is generated per completed pixel
 5. write addresses increment correctly from 0 and do not wrap unexpectedly
 6. `VSYNC` and `HREF` handling resets/guards capture state correctly
@@ -493,7 +492,7 @@ At the end of this task, the project should have this proven building block:
 ```text
 OV7670 D[7:0], PCLK, HREF, VSYNC
     -> byte assembly (RGB565)
-    -> RGB565 to RGB444 conversion
+    -> bounded RGB565 framebuffer write
     -> wr_en / wr_addr / wr_data
     -> framebuffer write-side interface
 ```

@@ -10,7 +10,7 @@ Implemented:
 - raw, grayscale, negative, and threshold modes
 - 4-bit `gray4 = (R + 2*G + B) >> 2` grayscale value
 - threshold comparison in the same 4-bit domain: `gray4 >= threshold[3:0]`
-- top-level control mapping now uses `sw[1:0]` for mode, `sw[5]` for VGA-only test-pattern debug mode, and `btnU` / `btnD` for stored 4-bit threshold adjustment
+- top-level control mapping now uses `sw[1:0]` for mode, `sw[5]` for VGA-only test-pattern debug mode, and `btnU` / `btnD` for stored 4-bit threshold adjustment. `sw[2]` is reserved for temporary camera-path diagnostics and does not change filter behavior.
 
 Verification:
 - `iverilog -g2012 -o sim/run/tb_video_filter_basic.vvp rtl/filters/video_filter_basic.v sim/tb/tb_video_filter_basic.sv`
@@ -75,9 +75,9 @@ For each 4-bit channel:
 ## Implementation notes
 - Grayscale uses a 4-bit `gray4 = (R + 2*G + B) >> 2` value.
 - Threshold compares in the same 4-bit domain: `gray4 >= threshold[3:0]`.
-- Top-level filter control uses Basys 3 switches/buttons: `sw[1:0]` for mode, `btnU` / `btnD` for threshold up/down, and `sw[5]` for VGA-only test-pattern debug.
+- Top-level filter control uses Basys 3 switches/buttons: `sw[1:0]` for mode, `btnU` / `btnD` for threshold up/down, and `sw[5]` for VGA-only test-pattern debug. `sw[2]` is a temporary camera-path LED diagnostic control.
 - `btnC` resets the design and restores the stored threshold to its default mid-scale value.
-- `sw[4:2]` are currently unused/reserved at the top level.
+- `sw[4:3]` select the reset-sampled camera profile at the top level.
 
 ## Deliverables
 - synthesizable filter module
