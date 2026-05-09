@@ -1,12 +1,12 @@
 `timescale 1ns/1ps
 
 // framebuffer_bram
-// Purpose: dual-port RGB444 framebuffer wrapper for one 320x240 raw frame.
+// Purpose: dual-port RGB565 framebuffer wrapper for one 320x240 raw frame.
 // Clock domains: write port uses wr_clk, read port uses rd_clk.
 // Ports: independent write address/data/enable and synchronous read address/data.
 // Assumption: callers keep addresses within 0..76799 for the baseline frame.
 module framebuffer_bram #(
-    parameter DATA_WIDTH   = 12,
+    parameter DATA_WIDTH   = 16,
     parameter ADDR_WIDTH   = 17,
     parameter FRAME_PIXELS = 76800
 ) (

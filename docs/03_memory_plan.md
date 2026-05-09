@@ -34,13 +34,13 @@ Pixel count:
 
 ## Pixel storage format
 Chosen storage format:
-- `RGB444`
+- `RGB565`
 
 Bits per pixel:
-- `12`
+- `16`
 
 Total frame storage:
-- `76,800 * 12 = 921,600 bits`
+- `76,800 * 16 = 1,228,800 bits`
 
 This comfortably fits within Basys 3 BRAM capacity for a single framebuffer.
 
@@ -51,15 +51,16 @@ Chosen capture target format from camera:
 Reason:
 - standard and common OV7670 mode
 - straightforward to assemble from two 8-bit transfers
-- easy to reduce to RGB444 for storage
+- can be stored directly in the framebuffer for better readout/filter precision
 
 ## RGB565 to RGB444 conversion
-Proposed down-conversion:
-- `R4 = R5[4:1]`
-- `G4 = G6[5:2]`
-- `B4 = B5[4:1]`
+The framebuffer stores RGB565.
+Conversion to RGB444 happens only at the final VGA output stage because the Basys 3 VGA pins expose 4 bits per color channel.
 
-This keeps the logic cheap and deterministic.
+Baseline rounded down-conversion:
+- `R4 = round(R5 / 2)`
+- `G4 = round(G6 / 4)`
+- `B4 = round(B5 / 2)`
 
 ## Addressing strategy
 Use linear addressing for the framebuffer.
@@ -101,12 +102,12 @@ Preferred baseline interface:
 - clock: `cam_pclk`
 - enable: `wr_en`
 - address: `wr_addr`
-- data in: `wr_data[11:0]`
+- data in: `wr_data[15:0]`
 
 ### Port B: read side
 - clock: `clk_vga`
 - address: `rd_addr`
-- data out: `rd_data[11:0]`
+- data out: `rd_data[15:0]`
 
 ## Implementation options
 Baseline recommendation:
@@ -143,7 +144,7 @@ Possible future upgrades:
 
 ## Current decision summary
 - source resolution: `320x240`
-- storage format: `RGB444`
+- storage format: `RGB565`
 - one framebuffer only
 - dual-port BRAM
 - linear addressing

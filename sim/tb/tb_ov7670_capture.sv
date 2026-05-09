@@ -2,7 +2,9 @@
 
 module tb_ov7670_capture;
 
-    localparam int FRAME_PIXELS = 4;
+    localparam int FRAME_WIDTH = 3;
+    localparam int FRAME_HEIGHT = 2;
+    localparam int FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT;
     localparam int ADDR_WIDTH = 17;
     localparam int MAX_EXPECTED_WRITES = 32;
 
@@ -14,21 +16,41 @@ module tb_ov7670_capture;
 
     wire                 wr_en;
     wire [ADDR_WIDTH-1:0] wr_addr;
-    wire [11:0]          wr_data;
+    wire [15:0]          wr_data;
     wire                 frame_done;
     wire                 frame_active;
+    wire                 dbg_line_seen;
+    wire                 dbg_line_ge_width;
+    wire                 dbg_line_ge_width_plus_1;
+    wire                 dbg_line_ge_width_plus_extra;
+
+    wire                 skip_wr_en;
+    wire [ADDR_WIDTH-1:0] skip_wr_addr;
+    wire [15:0]          skip_wr_data;
+    wire                 skip_frame_done;
+    wire                 skip_frame_active;
+
+    wire                 skip8_wr_en;
+    wire [ADDR_WIDTH-1:0] skip8_wr_addr;
+    wire [15:0]          skip8_wr_data;
+    wire                 skip8_frame_done;
+    wire                 skip8_frame_active;
 
     integer errors;
     integer expected_count;
     integer observed_count;
     reg [ADDR_WIDTH-1:0] expected_addr [0:MAX_EXPECTED_WRITES-1];
-    reg [11:0] expected_data [0:MAX_EXPECTED_WRITES-1];
+    reg [15:0] expected_data [0:MAX_EXPECTED_WRITES-1];
 
     reg monitor_valid;
     reg prev_wr_en;
     reg [ADDR_WIDTH-1:0] prev_wr_addr;
 
     ov7670_capture_rgb565 #(
+        .FRAME_WIDTH  (FRAME_WIDTH),
+        .FRAME_HEIGHT (FRAME_HEIGHT),
+        .SKIP_LEFT_PIXELS (0),
+        .SKIP_TOP_LINES   (0),
         .FRAME_PIXELS (FRAME_PIXELS),
         .ADDR_WIDTH   (ADDR_WIDTH)
     ) dut (
@@ -41,14 +63,58 @@ module tb_ov7670_capture;
         .wr_addr      (wr_addr),
         .wr_data      (wr_data),
         .frame_done   (frame_done),
-        .frame_active (frame_active)
+        .frame_active (frame_active),
+        .dbg_line_seen (dbg_line_seen),
+        .dbg_line_ge_width (dbg_line_ge_width),
+        .dbg_line_ge_width_plus_1 (dbg_line_ge_width_plus_1),
+        .dbg_line_ge_width_plus_extra (dbg_line_ge_width_plus_extra)
+    );
+
+    ov7670_capture_rgb565 #(
+        .FRAME_WIDTH      (FRAME_WIDTH),
+        .FRAME_HEIGHT     (FRAME_HEIGHT),
+        .SKIP_LEFT_PIXELS (2),
+        .SKIP_TOP_LINES   (0),
+        .FRAME_PIXELS     (FRAME_PIXELS),
+        .ADDR_WIDTH       (ADDR_WIDTH)
+    ) skip_dut (
+        .pclk         (pclk),
+        .rst          (rst),
+        .vsync        (vsync),
+        .href         (href),
+        .cam_d        (cam_d),
+        .wr_en        (skip_wr_en),
+        .wr_addr      (skip_wr_addr),
+        .wr_data      (skip_wr_data),
+        .frame_done   (skip_frame_done),
+        .frame_active (skip_frame_active)
+    );
+
+    ov7670_capture_rgb565 #(
+        .FRAME_WIDTH      (4),
+        .FRAME_HEIGHT     (2),
+        .SKIP_LEFT_PIXELS (8),
+        .SKIP_TOP_LINES   (0),
+        .FRAME_PIXELS     (8),
+        .ADDR_WIDTH       (ADDR_WIDTH)
+    ) skip8_dut (
+        .pclk         (pclk),
+        .rst          (rst),
+        .vsync        (vsync),
+        .href         (href),
+        .cam_d        (cam_d),
+        .wr_en        (skip8_wr_en),
+        .wr_addr      (skip8_wr_addr),
+        .wr_data      (skip8_wr_data),
+        .frame_done   (skip8_frame_done),
+        .frame_active (skip8_frame_active)
     );
 
     always #5 pclk = ~pclk;
 
-    function automatic [11:0] rgb565_to_rgb444(input [15:0] rgb565);
+    function automatic [15:0] stored_pixel(input [15:0] rgb565);
         begin
-            rgb565_to_rgb444 = {rgb565[15:12], rgb565[10:7], rgb565[4:1]};
+            stored_pixel = rgb565;
         end
     endfunction
 
@@ -63,7 +129,7 @@ module tb_ov7670_capture;
 
     task automatic queue_write(
         input [ADDR_WIDTH-1:0] addr,
-        input [11:0] data
+        input [15:0] data
     );
         begin
             check_signal(expected_count < MAX_EXPECTED_WRITES,
@@ -104,7 +170,7 @@ module tb_ov7670_capture;
                                            expected_addr[observed_count],
                                            wr_addr));
                     check_signal(wr_data === expected_data[observed_count],
-                                 $sformatf("write %0d data expected 0x%03h got 0x%03h",
+                                 $sformatf("write %0d data expected 0x%04h got 0x%04h",
                                            observed_count,
                                            expected_data[observed_count],
                                            wr_data));
@@ -143,11 +209,19 @@ module tb_ov7670_capture;
             check_signal(wr_en === 1'b0, "wr_en should reset low");
             check_signal(wr_addr === {ADDR_WIDTH{1'b0}},
                          "wr_addr should reset to zero");
-            check_signal(wr_data === 12'h000, "wr_data should reset to zero");
+            check_signal(wr_data === 16'h0000, "wr_data should reset to zero");
             check_signal(frame_done === 1'b0,
                          "frame_done should reset low");
             check_signal(frame_active === 1'b0,
                          "frame_active should reset low");
+            check_signal(dbg_line_seen === 1'b0,
+                         "dbg_line_seen should reset low");
+            check_signal(dbg_line_ge_width === 1'b0,
+                         "dbg_line_ge_width should reset low");
+            check_signal(dbg_line_ge_width_plus_1 === 1'b0,
+                         "dbg_line_ge_width_plus_1 should reset low");
+            check_signal(dbg_line_ge_width_plus_extra === 1'b0,
+                         "dbg_line_ge_width_plus_extra should reset low");
 
             @(negedge pclk);
             rst = 1'b0;
@@ -159,6 +233,8 @@ module tb_ov7670_capture;
                          "frame_done should stay low after reset release");
             check_signal(frame_active === 1'b0,
                          "frame_active should stay low before capture starts");
+            check_signal(dbg_line_seen === 1'b0,
+                         "dbg_line_seen should stay low before capture starts");
         end
     endtask
 
@@ -185,7 +261,7 @@ module tb_ov7670_capture;
         input [15:0] rgb565
     );
         begin
-            queue_write(addr, rgb565_to_rgb444(rgb565));
+            queue_write(addr, stored_pixel(rgb565));
             drive_pixel(rgb565);
         end
     endtask
@@ -235,6 +311,18 @@ module tb_ov7670_capture;
             check_signal(wr_addr === {ADDR_WIDTH{1'b0}},
                          $sformatf("%s wr_addr should reset on vsync",
                                    label));
+            check_signal(dbg_line_seen === 1'b0,
+                         $sformatf("%s dbg_line_seen should clear on vsync",
+                                   label));
+            check_signal(dbg_line_ge_width === 1'b0,
+                         $sformatf("%s dbg_line_ge_width should clear on vsync",
+                                   label));
+            check_signal(dbg_line_ge_width_plus_1 === 1'b0,
+                         $sformatf("%s dbg_line_ge_width_plus_1 should clear on vsync",
+                                   label));
+            check_signal(dbg_line_ge_width_plus_extra === 1'b0,
+                         $sformatf("%s dbg_line_ge_width_plus_extra should clear on vsync",
+                                   label));
 
             @(negedge pclk);
             vsync = 1'b0;
@@ -266,7 +354,7 @@ module tb_ov7670_capture;
             $display("INFO: running short valid line case");
             reset_dut();
 
-            queue_write(17'd0, rgb565_to_rgb444(16'hf800));
+            queue_write(17'd0, stored_pixel(16'hf800));
             drive_byte(8'hf8);
             check_signal(frame_active === 1'b1,
                          "frame_active should assert after first valid byte");
@@ -297,7 +385,7 @@ module tb_ov7670_capture;
             check_signal(observed_count == before_gap_count,
                          "line gap should not produce writes");
 
-            drive_expected_pixel(17'd1, 16'h3456);
+            drive_expected_pixel(17'd3, 16'h3456);
             end_line();
 
             expect_all_writes("line gap");
@@ -317,6 +405,125 @@ module tb_ov7670_capture;
             end_line();
 
             expect_all_writes("frame boundary reset");
+        end
+    endtask
+
+    task automatic run_short_line_row_address_case;
+        begin
+            $display("INFO: running short-line row-address case");
+            reset_dut();
+
+            drive_expected_pixel(17'd0, 16'h1111);
+            end_line();
+            drive_expected_pixel(17'd3, 16'h2222);
+            end_line();
+
+            expect_all_writes("short-line row address");
+            check_signal(wr_addr === 17'd3,
+                         "second short line should start at next framebuffer row");
+        end
+    endtask
+
+    task automatic run_left_skip_address_case;
+        integer skip_observed;
+        begin
+            $display("INFO: running left-skip address case");
+            reset_dut();
+
+            skip_observed = 0;
+            queue_write(17'd0, stored_pixel(16'haaaa));
+            queue_write(17'd1, stored_pixel(16'hbbbb));
+            queue_write(17'd2, stored_pixel(16'h1234));
+
+            drive_pixel(16'haaaa);
+            check_signal(skip_wr_en === 1'b0,
+                         "skip DUT should suppress first skipped pixel");
+            drive_pixel(16'hbbbb);
+            check_signal(skip_wr_en === 1'b0,
+                         "skip DUT should suppress second skipped pixel");
+            drive_pixel(16'h1234);
+            if (skip_wr_en) begin
+                skip_observed = skip_observed + 1;
+            end
+            check_signal(skip_wr_en === 1'b1,
+                         "skip DUT should write first post-skip pixel");
+            check_signal(skip_wr_addr === 17'd0,
+                         "skip DUT first post-skip pixel should map to address 0");
+            check_signal(skip_wr_data === stored_pixel(16'h1234),
+                         "skip DUT first post-skip pixel data mismatch");
+            drive_pixel(16'h5678);
+            if (skip_wr_en) begin
+                skip_observed = skip_observed + 1;
+            end
+            check_signal(skip_wr_en === 1'b1,
+                         "skip DUT should write second post-skip pixel");
+            check_signal(skip_wr_addr === 17'd1,
+                         "skip DUT second post-skip pixel should map to address 1");
+            check_signal(skip_wr_data === stored_pixel(16'h5678),
+                         "skip DUT second post-skip pixel data mismatch");
+
+            end_line();
+
+            expect_all_writes("left-skip address");
+            check_signal(skip_observed == 2,
+                         "skip DUT should produce exactly two observed writes");
+        end
+    endtask
+
+    task automatic run_left_skip8_two_line_case;
+        integer line;
+        integer x_pos;
+        integer skip8_observed;
+        reg [15:0] pixel_value;
+        reg [ADDR_WIDTH-1:0] expected_skip8_addr;
+        begin
+            $display("INFO: running 8-pixel left-skip two-line alignment case");
+            reset_dut();
+
+            skip8_observed = 0;
+
+            for (line = 0; line < 2; line = line + 1) begin
+                for (x_pos = 0; x_pos < 12; x_pos = x_pos + 1) begin
+                    pixel_value = 16'h8000 + (line * 16) + x_pos;
+
+                    if (x_pos < FRAME_WIDTH) begin
+                        queue_write((line * FRAME_WIDTH) + x_pos,
+                                    stored_pixel(pixel_value));
+                    end
+
+                    drive_pixel(pixel_value);
+
+                    if ((x_pos < 8) || (x_pos >= 12)) begin
+                        check_signal(skip8_wr_en === 1'b0,
+                                     "skip8 DUT should suppress pixels outside the cropped window");
+                    end else begin
+                        expected_skip8_addr = (line * 4) + (x_pos - 8);
+
+                        if (skip8_wr_en) begin
+                            skip8_observed = skip8_observed + 1;
+                        end
+
+                        check_signal(skip8_wr_en === 1'b1,
+                                     "skip8 DUT should write each post-skip in-window pixel");
+                        check_signal(skip8_wr_addr === expected_skip8_addr,
+                                     $sformatf("skip8 address expected %0d got %0d",
+                                               expected_skip8_addr,
+                                               skip8_wr_addr));
+                        check_signal(skip8_wr_data === stored_pixel(pixel_value),
+                                     $sformatf("skip8 data expected 0x%04h got 0x%04h",
+                                               stored_pixel(pixel_value),
+                                               skip8_wr_data));
+                    end
+                end
+
+                end_line();
+            end
+
+            expect_all_writes("8-pixel left-skip two-line alignment");
+            check_signal(skip8_observed == 8,
+                         "skip8 DUT should produce exactly eight cropped-frame writes");
+            check_signal(skip8_wr_addr === 17'd7,
+                         "skip8 final write should be row 1 column 3, proving no row drift");
         end
     endtask
 
@@ -346,17 +553,125 @@ module tb_ov7670_capture;
             drive_expected_pixel(17'd0, 16'h0000);
             drive_expected_pixel(17'd1, 16'hffff);
             drive_expected_pixel(17'd2, 16'hf81f);
+            end_line();
             drive_expected_pixel(17'd3, 16'h07e0);
-
-            drive_pixel(16'h001f);
-            drive_pixel(16'haaaa);
+            drive_expected_pixel(17'd4, 16'h001f);
+            drive_expected_pixel(17'd5, 16'haaaa);
+            drive_pixel(16'h5555);
             end_line();
 
             expect_all_writes("address cap");
-            check_signal(wr_addr === 17'd3,
+            check_signal(wr_addr === 17'd5,
                          "wr_addr should hold at final accepted address");
 
             pulse_vsync(1'b0, 8'h00, 1'b1, "full frame boundary");
+        end
+    endtask
+
+    task automatic run_overwide_line_case;
+        begin
+            $display("INFO: running over-wide line suppression case");
+            reset_dut();
+
+            drive_expected_pixel(17'd0, 16'h1001);
+            drive_expected_pixel(17'd1, 16'h2002);
+            drive_expected_pixel(17'd2, 16'h3003);
+            drive_pixel(16'h4004);
+            drive_pixel(16'h5005);
+            end_line();
+
+            expect_all_writes("over-wide line");
+            check_signal(wr_addr === 17'd2,
+                         "over-wide line should hold at final in-bounds write");
+        end
+    endtask
+
+    task automatic run_overtall_frame_case;
+        begin
+            $display("INFO: running over-tall frame suppression case");
+            reset_dut();
+
+            drive_expected_pixel(17'd0, 16'h1111);
+            end_line();
+            drive_expected_pixel(17'd3, 16'h2222);
+            end_line();
+            drive_pixel(16'h3333);
+            end_line();
+
+            expect_all_writes("over-tall frame");
+            check_signal(wr_addr === 17'd3,
+                         "over-tall frame should hold at final in-bounds write");
+        end
+    endtask
+
+    task automatic drive_diag_line(input integer pixel_count);
+        integer pixel_index;
+        reg [15:0] pixel_value;
+        begin
+            for (pixel_index = 0; pixel_index < pixel_count; pixel_index = pixel_index + 1) begin
+                pixel_value = 16'h4000 + pixel_index[15:0];
+
+                if (pixel_index < FRAME_WIDTH) begin
+                    queue_write(pixel_index[ADDR_WIDTH-1:0], stored_pixel(pixel_value));
+                end
+
+                drive_pixel(pixel_value);
+            end
+
+            end_line();
+            expect_all_writes($sformatf("diag line %0d pixels", pixel_count));
+        end
+    endtask
+
+    task automatic run_line_length_debug_case;
+        begin
+            $display("INFO: running line-length debug flag case");
+
+            reset_dut();
+            drive_diag_line(FRAME_WIDTH - 1);
+            check_signal(dbg_line_seen === 1'b1,
+                         "short debug line should set dbg_line_seen");
+            check_signal(dbg_line_ge_width === 1'b0,
+                         "short debug line should not set dbg_line_ge_width");
+            check_signal(dbg_line_ge_width_plus_1 === 1'b0,
+                         "short debug line should not set dbg_line_ge_width_plus_1");
+            check_signal(dbg_line_ge_width_plus_extra === 1'b0,
+                         "short debug line should not set dbg_line_ge_width_plus_extra");
+
+            reset_dut();
+            drive_diag_line(FRAME_WIDTH);
+            check_signal(dbg_line_seen === 1'b1,
+                         "exact-width debug line should set dbg_line_seen");
+            check_signal(dbg_line_ge_width === 1'b1,
+                         "exact-width debug line should set dbg_line_ge_width");
+            check_signal(dbg_line_ge_width_plus_1 === 1'b0,
+                         "exact-width debug line should not set dbg_line_ge_width_plus_1");
+            check_signal(dbg_line_ge_width_plus_extra === 1'b0,
+                         "exact-width debug line should not set dbg_line_ge_width_plus_extra");
+
+            reset_dut();
+            drive_diag_line(FRAME_WIDTH + 1);
+            check_signal(dbg_line_seen === 1'b1,
+                         "width-plus-one debug line should set dbg_line_seen");
+            check_signal(dbg_line_ge_width === 1'b1,
+                         "width-plus-one debug line should set dbg_line_ge_width");
+            check_signal(dbg_line_ge_width_plus_1 === 1'b1,
+                         "width-plus-one debug line should set dbg_line_ge_width_plus_1");
+            check_signal(dbg_line_ge_width_plus_extra === 1'b0,
+                         "width-plus-one debug line should not set dbg_line_ge_width_plus_extra");
+
+            reset_dut();
+            drive_diag_line(FRAME_WIDTH + 8);
+            check_signal(dbg_line_seen === 1'b1,
+                         "width-plus-extra debug line should set dbg_line_seen");
+            check_signal(dbg_line_ge_width === 1'b1,
+                         "width-plus-extra debug line should set dbg_line_ge_width");
+            check_signal(dbg_line_ge_width_plus_1 === 1'b1,
+                         "width-plus-extra debug line should set dbg_line_ge_width_plus_1");
+            check_signal(dbg_line_ge_width_plus_extra === 1'b1,
+                         "width-plus-extra debug line should set dbg_line_ge_width_plus_extra");
+
+            pulse_vsync(1'b0, 8'h00, 1'b1, "debug flag frame boundary");
         end
     endtask
 
@@ -371,10 +686,16 @@ module tb_ov7670_capture;
         run_line_gap_case();
         run_frame_boundary_case();
         run_incomplete_pair_case();
+        run_short_line_row_address_case();
+        run_left_skip_address_case();
+        run_left_skip8_two_line_case();
+        run_overwide_line_case();
+        run_overtall_frame_case();
+        run_line_length_debug_case();
         run_address_cap_case();
 
         if (errors == 0) begin
-            $display("PASS: OV7670 RGB565 capture byte assembly, RGB444 conversion, frame control, and address cap verified.");
+            $display("PASS: OV7670 RGB565 capture byte assembly, bounded frame control, line diagnostics, and address cap verified.");
             $finish;
         end
 

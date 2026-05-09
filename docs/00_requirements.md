@@ -61,7 +61,7 @@ These decisions are intentionally frozen for the first working baseline.
 
 ### Pixel format
 - camera capture target: `RGB565`
-- stored framebuffer format: `RGB444`
+- stored framebuffer format: `RGB565`
 - display output format: `RGB444` to Basys 3 VGA pins
 
 ### Buffering
@@ -101,7 +101,7 @@ The first complete baseline is met as of 2026-05-07.
 
 Validated baseline behavior:
 - Basys 3 hardware locks a monitor to standard `640x480 @ 60 Hz` VGA timing.
-- Live OV7670 video is captured into the single RGB444 framebuffer and displayed as `320x240` content with exact 2x scaling.
+- Live OV7670 video is captured into the single RGB565 framebuffer and displayed as `320x240` content with exact 2x scaling.
 - `sw[1:0]` selects raw, grayscale, negative, and threshold display modes in real time.
 - `btnU` / `btnD` adjust the threshold value, and `sw[5]` remains available as a VGA-only debug pattern override.
 - Module-level simulations remain the verification evidence for VGA timing, VGA reader/addressing, filters, SCCB master, OV7670 init, and camera capture.

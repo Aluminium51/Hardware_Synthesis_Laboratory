@@ -14,6 +14,7 @@ module ov7670_init #(
     input  wire       clk,
     input  wire       rst,
     input  wire       start_init,
+    input  wire [3:0] profile,
     input  wire       sccb_busy,
     input  wire       sccb_done,
     input  wire       sccb_ack_error,
@@ -55,6 +56,7 @@ module ov7670_init #(
 
     ov7670_reg_rom reg_rom (
         .index    (rom_index),
+        .profile  (profile),
         .reg_addr (rom_reg_addr),
         .reg_data (rom_reg_data),
         .is_last  (rom_is_last)

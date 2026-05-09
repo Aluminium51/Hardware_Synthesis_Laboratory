@@ -4,14 +4,14 @@
 // Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
 // Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
 // Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
-// Inputs: slide switches select VGA test-pattern/filter mode; buttons adjust threshold.
+// Inputs: slide switches select VGA test-pattern/filter/profile mode; buttons adjust threshold.
 // Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
 module top_basys3_ov7670_vga (
     input  wire        clk_100,
     input  wire        btnC,
     input  wire        btnU,
     input  wire        btnD,
-    input  wire [5:0]  sw,
+    input  wire [7:0]  sw,
     output wire        Hsync,
     output wire        Vsync,
     output wire [3:0]  vgaRed,
@@ -39,11 +39,11 @@ module top_basys3_ov7670_vga (
 
     wire rst_vga = rst_sys;
 
-    wire [5:0] sw_sync;
+    wire [7:0] sw_sync;
 
     genvar sw_i;
     generate
-        for (sw_i = 0; sw_i < 6; sw_i = sw_i + 1) begin : gen_sw_sync
+        for (sw_i = 0; sw_i < 8; sw_i = sw_i + 1) begin : gen_sw_sync
             sync_2ff u_sync_sw (
                 .clk     (clk_100),
                 .rst     (rst_sys),
@@ -54,7 +54,20 @@ module top_basys3_ov7670_vga (
     endgenerate
 
     wire       debug_pattern_en = sw_sync[5];
+    wire       camera_diag_en = sw_sync[2];
     wire [1:0] filter_mode = sw_sync[1:0];
+    reg  [3:0] camera_profile = 4'b0000;
+
+    // Camera profile switches are sampled only during btnC reset.
+    // sw[4:3] selects the base profile. sw[6] selects the OV7670 internal
+    // averaged-QVGA experiment when sw[7]=0. sw[7] selects full-VGA sensor
+    // output with FPGA-side 2x2 averaging; sw[4:3] then selects horizontal
+    // window A/B variants.
+    always @(posedge clk_100) begin
+        if (rst_sys) begin
+            camera_profile <= {sw[7], sw[6], sw[4:3]};
+        end
+    end
 
     wire btnU_sync;
     wire btnD_sync;
@@ -189,6 +202,7 @@ module top_basys3_ov7670_vga (
         .clk            (clk_100),
         .rst            (rst_sys),
         .start_init     (1'b1),
+        .profile        (camera_profile),
         .sccb_busy      (sccb_busy),
         .sccb_done      (sccb_done),
         .sccb_ack_error (sccb_ack_error),
@@ -247,24 +261,80 @@ module top_basys3_ov7670_vga (
 
     wire        capture_wr_en;
     wire [16:0] capture_wr_addr;
-    wire [11:0] capture_wr_data;
+    wire [15:0] capture_wr_data;
     wire        capture_frame_done;
+    wire        capture_dbg_line_seen;
+    wire        capture_dbg_line_ge_width;
+    wire        capture_dbg_line_ge_width_plus_1;
+    wire        capture_dbg_line_ge_width_plus_extra;
+    wire        full_avg_capture_en = camera_profile[3];
 
-    ov7670_capture_rgb565 u_ov7670_capture (
+    wire        stable_capture_wr_en;
+    wire [16:0] stable_capture_wr_addr;
+    wire [15:0] stable_capture_wr_data;
+    wire        stable_capture_frame_done;
+    wire        stable_capture_dbg_line_seen;
+    wire        stable_capture_dbg_line_ge_width;
+    wire        stable_capture_dbg_line_ge_width_plus_1;
+    wire        stable_capture_dbg_line_ge_width_plus_extra;
+
+    ov7670_capture_rgb565 #(
+        .SKIP_LEFT_PIXELS (0),
+        .SKIP_TOP_LINES   (0)
+    ) u_ov7670_capture (
         .pclk         (cam_pclk),
         .rst          (capture_rst),
         .vsync        (cam_vsync),
         .href         (cam_href),
         .cam_d        (cam_d),
-        .wr_en        (capture_wr_en),
-        .wr_addr      (capture_wr_addr),
-        .wr_data      (capture_wr_data),
-        .frame_done   (capture_frame_done),
-        .frame_active ()
+        .wr_en        (stable_capture_wr_en),
+        .wr_addr      (stable_capture_wr_addr),
+        .wr_data      (stable_capture_wr_data),
+        .frame_done   (stable_capture_frame_done),
+        .frame_active (),
+        .dbg_line_seen (stable_capture_dbg_line_seen),
+        .dbg_line_ge_width (stable_capture_dbg_line_ge_width),
+        .dbg_line_ge_width_plus_1 (stable_capture_dbg_line_ge_width_plus_1),
+        .dbg_line_ge_width_plus_extra (stable_capture_dbg_line_ge_width_plus_extra)
     );
 
+    wire        avg_capture_wr_en;
+    wire [16:0] avg_capture_wr_addr;
+    wire [15:0] avg_capture_wr_data;
+    wire        avg_capture_frame_done;
+    wire        avg_capture_dbg_line_seen;
+    wire        avg_capture_dbg_line_ge_width;
+    wire        avg_capture_dbg_line_ge_width_plus_1;
+    wire        avg_capture_dbg_line_ge_width_plus_extra;
+
+    ov7670_capture_rgb565_2x2_avg u_ov7670_capture_2x2_avg (
+        .pclk         (cam_pclk),
+        .rst          (capture_rst),
+        .vsync        (cam_vsync),
+        .href         (cam_href),
+        .cam_d        (cam_d),
+        .wr_en        (avg_capture_wr_en),
+        .wr_addr      (avg_capture_wr_addr),
+        .wr_data      (avg_capture_wr_data),
+        .frame_done   (avg_capture_frame_done),
+        .frame_active (),
+        .dbg_line_seen (avg_capture_dbg_line_seen),
+        .dbg_line_ge_width (avg_capture_dbg_line_ge_width),
+        .dbg_line_ge_width_plus_1 (avg_capture_dbg_line_ge_width_plus_1),
+        .dbg_line_ge_width_plus_extra (avg_capture_dbg_line_ge_width_plus_extra)
+    );
+
+    assign capture_wr_en = full_avg_capture_en ? avg_capture_wr_en : stable_capture_wr_en;
+    assign capture_wr_addr = full_avg_capture_en ? avg_capture_wr_addr : stable_capture_wr_addr;
+    assign capture_wr_data = full_avg_capture_en ? avg_capture_wr_data : stable_capture_wr_data;
+    assign capture_frame_done = full_avg_capture_en ? avg_capture_frame_done : stable_capture_frame_done;
+    assign capture_dbg_line_seen = full_avg_capture_en ? avg_capture_dbg_line_seen : stable_capture_dbg_line_seen;
+    assign capture_dbg_line_ge_width = full_avg_capture_en ? avg_capture_dbg_line_ge_width : stable_capture_dbg_line_ge_width;
+    assign capture_dbg_line_ge_width_plus_1 = full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_1 : stable_capture_dbg_line_ge_width_plus_1;
+    assign capture_dbg_line_ge_width_plus_extra = full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_extra : stable_capture_dbg_line_ge_width_plus_extra;
+
     wire [16:0] fb_rd_addr;
-    wire [11:0] fb_rd_data;
+    wire [15:0] fb_rd_data;
 
     framebuffer_bram u_framebuffer (
         .wr_clk  (cam_pclk),
@@ -279,7 +349,7 @@ module top_basys3_ov7670_vga (
     wire        hsync_reader;
     wire        vsync_reader;
     wire        active_video_reader;
-    wire [11:0] reader_rgb444;
+    wire [15:0] reader_rgb565;
 
     vga_reader_320x240 u_vga_reader (
         .clk_100          (clk_100),
@@ -295,18 +365,48 @@ module top_basys3_ov7670_vga (
         .hsync_out        (hsync_reader),
         .vsync_out        (vsync_reader),
         .active_video_out (active_video_reader),
-        .rgb444_out       (reader_rgb444)
+        .rgb565_out       (reader_rgb565)
     );
 
-    wire [11:0] filtered_rgb444;
+    wire [15:0] filtered_rgb565;
 
     video_filter_basic u_video_filter_basic (
-        .rgb444_in  (reader_rgb444),
+        .rgb565_in  (reader_rgb565),
         .mode       (filter_mode),
         .threshold  (filter_threshold),
-        .rgb444_out (filtered_rgb444)
+        .rgb565_out (filtered_rgb565)
     );
 
+    function [3:0] round5_to4;
+        input [4:0] value;
+        reg [5:0] rounded;
+        begin
+            rounded = {1'b0, value} + 6'd1;
+            round5_to4 = rounded[5] ? 4'hf : rounded[4:1];
+        end
+    endfunction
+
+    function [3:0] round6_to4;
+        input [5:0] value;
+        reg [6:0] rounded;
+        begin
+            rounded = {1'b0, value} + 7'd2;
+            round6_to4 = rounded[6] ? 4'hf : rounded[5:2];
+        end
+    endfunction
+
+    function [11:0] rgb565_to_rgb444;
+        input [15:0] rgb565;
+        begin
+            rgb565_to_rgb444 = {
+                round5_to4(rgb565[15:11]),
+                round6_to4(rgb565[10:5]),
+                round5_to4(rgb565[4:0])
+            };
+        end
+    endfunction
+
+    wire [11:0] filtered_rgb444 = rgb565_to_rgb444(filtered_rgb565);
     wire [11:0] camera_rgb444 = (init_done && active_video_reader) ?
                                 filtered_rgb444 : 12'h000;
     wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;
@@ -369,9 +469,43 @@ module top_basys3_ov7670_vga (
     assign vgaGreen = display_rgb444[7:4];
     assign vgaBlue  = display_rgb444[3:0];
 
-    assign led[0] = heartbeat[25];
-    assign led[1] = init_done;
-    assign led[2] = init_error;
-    assign led[3] = (frame_activity_hold != 24'd0);
+    wire dbg_line_seen_sys;
+    wire dbg_line_ge_width_sys;
+    wire dbg_line_ge_width_plus_1_sys;
+    wire dbg_line_ge_width_plus_extra_sys;
+
+    sync_2ff u_sync_dbg_line_seen_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (capture_dbg_line_seen),
+        .q_sync  (dbg_line_seen_sys)
+    );
+
+    sync_2ff u_sync_dbg_line_ge_width_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (capture_dbg_line_ge_width),
+        .q_sync  (dbg_line_ge_width_sys)
+    );
+
+    sync_2ff u_sync_dbg_line_ge_width_plus_1_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (capture_dbg_line_ge_width_plus_1),
+        .q_sync  (dbg_line_ge_width_plus_1_sys)
+    );
+
+    sync_2ff u_sync_dbg_line_ge_width_plus_extra_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (capture_dbg_line_ge_width_plus_extra),
+        .q_sync  (dbg_line_ge_width_plus_extra_sys)
+    );
+
+    assign led[0] = camera_diag_en ? dbg_line_seen_sys : heartbeat[25];
+    assign led[1] = camera_diag_en ? dbg_line_ge_width_sys : init_done;
+    assign led[2] = camera_diag_en ? dbg_line_ge_width_plus_1_sys : init_error;
+    assign led[3] = camera_diag_en ? dbg_line_ge_width_plus_extra_sys :
+                                     (frame_activity_hold != 24'd0);
 
 endmodule

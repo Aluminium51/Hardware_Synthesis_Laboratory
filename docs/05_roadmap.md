@@ -114,6 +114,7 @@ Status:
 - Complete as of 2026-04-22.
 - Simulation passed for register ROM sequencing, startup gating, post-soft-reset delay, ACK failure handling, and sticky done/error status.
 - Updated on 2026-05-05 to use the fuller known-good OV7670 register table and keep internal color bars enabled for hardware debug.
+- Updated on 2026-05-08 so the color-bar profile uses the COM17 internal color-bar enable bit as the final profile write.
 - Hardware validation passed on 2026-05-07 as part of the completed baseline; camera initialization reaches the expected done state without the error indicator.
 
 Goal:
@@ -158,6 +159,16 @@ Status:
 - Icarus Verilog top-level elaboration passed for the raw camera-to-framebuffer-to-VGA design.
 - Module simulations still pass for VGA timing, VGA reader, SCCB master, OV7670 init, and OV7670 capture.
 - Updated on 2026-05-05 for debug-pattern bring-up: slower SCCB timing, raw display-only debug path, and `cam_pclk` dedicated-route override.
+- Updated on 2026-05-08 to keep `sw[4:3]` reset-sampled, document the reset/reinit workflow, and temporarily test an 8-pixel left crop for the observed left-edge stripe.
+- Updated on 2026-05-08 to restore full-width capture after the 8-pixel left crop caused an unwritten right-side black band on 320-pixel camera lines.
+- Updated on 2026-05-08 to add `sw[2]` camera line-length LED diagnostics before attempting another stripe fix.
+- Updated on 2026-05-08 to shift the OV7670 horizontal window right by 19 source pixels while keeping full-width FPGA capture.
+- Updated on 2026-05-08 to shift the OV7670 vertical window up by two visible high-bit window steps while keeping full-height FPGA capture.
+- Updated on 2026-05-08 to isolate an averaged-QVGA OV7670 DCW/scaler experiment behind reset-sampled `sw[6]=1, sw[4:3]=00` while preserving stable live, low-speed, and color-bar profiles.
+- Updated on 2026-05-09 to add a separate reset-sampled `sw[7]=1, sw[6]=0, sw[4:3]=00` full-VGA camera profile with FPGA-side 2x2 averaging into the existing 320x240 framebuffer.
+- Updated on 2026-05-09 to apply the tuned horizontal and vertical camera window shifts to the `sw[7]` full-VGA averaging profile after hardware showed the raw edge artifacts returned in that mode.
+- Updated on 2026-05-09 to clamp the last 10 `sw[7]` averaged destination columns to the nearest valid averaged pixel after hardware showed a right-edge averaging artifact from the shifted full-VGA window.
+- Updated on 2026-05-09 to replace the top-level `sw[7]` clamp with reset-sampled horizontal window A/B variants on `sw[4:3]`; hardware testing showed the 8-source-pixel shift removed both edge artifacts, so `00` now defaults to that window.
 - Vivado synthesis, bitstream generation, and hardware validation passed for the completed baseline.
 - Live OV7670 video displays through the framebuffer, and raw / grayscale / negative / threshold modes switch in real time on the VGA readout path.
 

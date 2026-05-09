@@ -31,7 +31,7 @@ The current baseline design is intentionally conservative and optimized for gett
 - **Display timing:** 640x480 @ 60 Hz VGA
 - **Display method:** 2x horizontal and 2x vertical pixel doubling
 - **Camera format:** RGB565
-- **Stored framebuffer format:** RGB444 (12-bit)
+- **Stored framebuffer format:** RGB565 (16-bit)
 - **Buffer strategy:** single framebuffer
 - **Filter location:** filters applied on VGA readout path
 - **Required filters:**
@@ -80,7 +80,7 @@ OV7670 Camera
 Camera Capture Logic
    │
    ├── assemble RGB565 pixels
-   ├── convert RGB565 -> RGB444
+   ├── preserve RGB565 for framebuffer storage
    ├── generate framebuffer write address
    └── write pixel into BRAM
    │
@@ -171,11 +171,10 @@ So the capture logic must:
 2. sample one byte on one `PCLK`
 3. sample the second byte on the next `PCLK`
 4. combine them into one RGB565 pixel
-5. reduce RGB565 to RGB444
-6. write the result into the framebuffer
+5. write the RGB565 result into the framebuffer
 
-### Why RGB565 -> RGB444
-The camera commonly outputs RGB565, but the framebuffer is stored as 12-bit RGB444 to save BRAM and match the board's VGA-style 4-bit-per-channel output more naturally.
+### Why keep RGB565 internally
+The camera commonly outputs RGB565, and the refined baseline now stores RGB565 in the framebuffer so the readout filters operate with more color precision before the final VGA conversion.
 
 Example mapping:
 - `R[4:1]` -> 4-bit red
@@ -203,11 +202,11 @@ The framebuffer is the core storage element of the system.
 ### Baseline framebuffer properties
 - resolution: 320x240
 - pixels: 76,800
-- color depth: 12 bits/pixel
-- format: RGB444
-- total size: 76,800 × 12 = 921,600 bits
+- color depth: 16 bits/pixel
+- format: RGB565
+- total size: 76,800 × 16 = 1,228,800 bits
 
-This fits within the Basys 3 BRAM budget, whereas a full 640x480 12-bit framebuffer would not.
+This fits within the Basys 3 BRAM budget, whereas a full 640x480 16-bit framebuffer would not.
 
 ### Memory organization
 The baseline uses a **single framebuffer** with **dual-port access**:
@@ -337,7 +336,47 @@ The threshold value is a stored 4-bit register:
 - `btnD`: decrease threshold by 1
 - `btnC`: reset system and restore threshold to mid-scale `4'h8`
 
-`sw[4:2]` are currently unused/reserved.
+Camera initialization profile is selected with `sw[4:3]` and sampled during reset:
+- `00`: live auto, normal-speed target
+- `01`: live low-noise, normal-speed target
+- `10`: live low-speed diagnostic
+- `11`: OV7670 internal color bars through COM17 color-bar enable
+
+`sw[6]` is also sampled during reset. With `sw[6]=1` and `sw[4:3]=00`,
+the camera uses the live-auto exposure/gain/clock profile with the averaged-QVGA
+OV7670 DCW/scaler experiment enabled for an honest A/B noise comparison.
+
+`sw[7]` is sampled during reset for a separate full-sensor experiment. With
+`sw[7]=1`, the OV7670 is configured for full-VGA RGB output and the FPGA
+capture path averages each 2x2 source block into one 320x240 framebuffer pixel
+using a single 640-pixel line buffer. `sw[4:3]` selects full-VGA horizontal
+window A/B variants while `sw[7]` is high.
+
+Change `sw[4:3]`, then press `btnC` to reinitialize the camera with the selected profile.
+
+### Camera-path line diagnostic
+- `sw[2] = 0`: normal LED meanings
+- `sw[2] = 1`: temporary camera line-length diagnostic LEDs
+
+In diagnostic mode:
+- `led[0]`: at least one camera line was seen
+- `led[1]`: at least one line reached 320 completed pixels
+- `led[2]`: at least one line reached 321 completed pixels
+- `led[3]`: at least one line reached 328 completed pixels
+
+This mode is intended to debug left-edge stripe behavior without changing the displayed camera pixels.
+
+Current camera windowing note:
+- the OV7670 horizontal window is shifted right by 19 source pixels in the register ROM
+- the OV7670 vertical window is shifted up by two visible high-bit window steps in the register ROM
+- the `sw[7]` full-VGA averaging profiles keep the tuned vertical window; hardware testing selected the 8-source-pixel horizontal shift as the default
+- FPGA capture remains full-width with no left crop
+
+Current camera scaling note:
+- `sw[6]=0` keeps the stable QVGA-like scaling register set for all `sw[4:3]` profiles
+- `sw[6]=1` with `sw[4:3]=00` enables the averaged-QVGA experiment using `COM3`, `COM14`, `SCALING_DCWCTR`, and scaled PCLK settings together
+- `sw[7]=1` enables full-VGA camera output and FPGA-side 2x2 averaging before framebuffer writes; with `sw[7]=1`, `sw[4:3]` selects horizontal windows `00=8-pixel default`, `01=16-pixel comparison`, `10=8-pixel known-good duplicate`, `11=reference`
+- change `sw[7]`, `sw[6]`, or `sw[4:3]`, then press `btnC` so the OV7670 reloads the selected SCCB profile
 
 ### VGA-only debug pattern
 - `sw[5] = 1`: show the built-in VGA test pattern directly from the base timing path
@@ -490,13 +529,22 @@ Register/value table for camera init.
 FSM that walks the register table and programs the camera.
 
 ### `ov7670_capture_rgb565.v`
-Captures two bytes per pixel from the OV7670 in the camera `pclk` domain, converts RGB565 to RGB444, and emits framebuffer write-side signals.
+Captures two bytes per pixel from the OV7670 in the camera `pclk` domain, applies explicit 320x240 capture bounds, emits RGB565 framebuffer write-side signals, and exposes debug-only line-length flags. The integrated baseline uses no left crop so all 320 framebuffer columns are written.
 
 Stable TASK-006 interface:
 - inputs: `pclk`, `rst`, `vsync`, `href`, `cam_d[7:0]`
-- outputs: `wr_en`, `wr_addr[16:0]`, `wr_data[11:0]`, `frame_done`, `frame_active`
+- outputs: `wr_en`, `wr_addr[16:0]`, `wr_data[15:0]`, `frame_done`, `frame_active`, line-length debug flags
 
 TASK-006 is simulation-verified as a module-level capture block and is wired into the top-level framebuffer path for live display.
+
+### `ov7670_capture_rgb565_2x2_avg.v`
+Experimental full-sensor capture path selected by `sw[7]=1`, `sw[6]=0`, and
+`sw[4:3]` horizontal A/B variants during reset. It receives a 640x480 RGB565
+stream, keeps only one previous 640-pixel line in FPGA memory, averages each 2x2
+block, and writes the result into the existing 320x240 RGB565 framebuffer. This
+is intended as a fair A/B test against the camera's internal QVGA scaling without
+changing the BRAM framebuffer architecture. The module still supports optional
+right-edge clamping for debug, but the top-level A/B test leaves clamping off.
 
 ---
 
@@ -562,7 +610,7 @@ Success condition:
 ## Stage 5 — Camera capture
 Implement:
 - RGB565 byte assembly
-- RGB444 conversion
+- RGB565 framebuffer writes
 - framebuffer writes
 
 Success condition:
@@ -629,6 +677,7 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - frame reset behavior works
 - `frame_done` and `frame_active` behave as defined for integration
 - writes are suppressed during `VSYNC` and after the address cap
+- line-length debug flags distinguish short, exact-width, and over-wide camera lines
 
 ---
 
