@@ -1,0 +1,10 @@
+; Placeholder COE for Haar cascade ROM initialization
+; 32-bit words, zero-filled safe default only
+; Replace with real packed cascade values produced by the converter script
+memory_initialization_radix=16;
+memory_initialization_vector=
+00000000,
+00000000,
+00000000,
+00000000,
+00000000;

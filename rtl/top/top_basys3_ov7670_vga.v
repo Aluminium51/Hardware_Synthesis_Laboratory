@@ -412,6 +412,76 @@ module top_basys3_ov7670_vga (
     wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;
     wire        display_hsync = debug_pattern_en ? hsync_timing : hsync_reader;
     wire        display_vsync = debug_pattern_en ? vsync_timing : vsync_reader;
+    wire        face_overlay_en = sw_sync[4];
+
+    wire [7:0]  face_rom_addr;
+    wire [31:0] face_rom_data;
+    wire        face_detect_valid = pixel_ce && active_video_reader && !x[0] && !y[0];
+
+    face_cascade_rom u_face_cascade_rom (
+        .clk  (clk_100),
+        .addr (face_rom_addr),
+        .data (face_rom_data)
+    );
+
+    // Face detection instance (runs in clk_100 domain, reads the reader stream)
+    wire face_found_sig;
+    wire [9:0] face_x_sig;
+    wire [9:0] face_y_sig;
+
+    face_detect u_face_detect (
+        .clk         (clk_100),
+        .rst         (rst_vga),
+        .pixel_valid (face_detect_valid),
+        .px_x        ({1'b0, x[9:1]}),
+        .px_y        ({1'b0, y[8:1]}),
+        .rgb565_in   (reader_rgb565),
+        .face_found  (face_found_sig),
+        .face_x      (face_x_sig),
+        .face_y      (face_y_sig),
+        .rom_addr    (face_rom_addr),
+        .rom_data    (face_rom_data)
+    );
+
+    // Overlay latch: capture face coordinates when detected and show a box
+    reg overlay_active = 1'b0;
+    reg [9:0] overlay_x = 10'd0;
+    reg [9:0] overlay_y = 10'd0;
+    reg [23:0] overlay_timer = 24'd0;
+
+    always @(posedge clk_100) begin
+        if (rst_sys || !face_overlay_en) begin
+            overlay_active <= 1'b0;
+            overlay_x <= 10'd0;
+            overlay_y <= 9'd0;
+            overlay_timer <= 24'd0;
+        end else begin
+            if (face_found_sig) begin
+                overlay_active <= 1'b1;
+                overlay_x <= face_x_sig;
+                overlay_y <= face_y_sig;
+                overlay_timer <= 24'd4_000_000; // show overlay for a short time
+            end else if (overlay_timer != 24'd0) begin
+                overlay_timer <= overlay_timer - 1'b1;
+                if (overlay_timer == 24'd1) overlay_active <= 1'b0;
+            end
+        end
+    end
+
+    // Compose final display RGB with overlay border if enabled
+    wire [11:0] display_rgb444_with_overlay;
+    wire overlay_border;
+    wire [9:0] overlay_x_disp = {overlay_x[8:0], 1'b0};
+    wire [9:0] overlay_y_disp = {overlay_y[8:0], 1'b0};
+    wire [9:0] overlay_x_end = overlay_x_disp + 10'd47;
+    wire [9:0] overlay_y_end = overlay_y_disp + 10'd47;
+
+    assign overlay_border = face_overlay_en && overlay_active && active_video_reader && (
+        ((x >= overlay_x_disp) && (x <= overlay_x_end) && ((y == overlay_y_disp) || (y == overlay_y_end))) ||
+        ((y >= overlay_y_disp) && (y <= overlay_y_end) && ((x == overlay_x_disp) || (x == overlay_x_end)))
+    );
+
+    assign display_rgb444_with_overlay = overlay_border ? 12'hfff : display_rgb444;
 
     reg [25:0] heartbeat = 26'd0;
 
@@ -465,9 +535,9 @@ module top_basys3_ov7670_vga (
     assign Hsync = display_hsync;
     assign Vsync = display_vsync;
 
-    assign vgaRed   = display_rgb444[11:8];
-    assign vgaGreen = display_rgb444[7:4];
-    assign vgaBlue  = display_rgb444[3:0];
+    assign vgaRed   = display_rgb444_with_overlay[11:8];
+    assign vgaGreen = display_rgb444_with_overlay[7:4];
+    assign vgaBlue  = display_rgb444_with_overlay[3:0];
 
     wire dbg_line_seen_sys;
     wire dbg_line_ge_width_sys;

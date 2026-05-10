@@ -1,0 +1,7 @@
+; Placeholder MEM for simulation or $readmem usage
+; 32-bit words, zero-filled safe default only
+00000000
+00000000
+00000000
+00000000
+00000000
