@@ -12,6 +12,8 @@ This is a baseline single-window evaluator architecture intended for Artix-7 (Ba
 Generator script: `scripts/vivado/haarcascade_to_coe.py`
 
 Output format uses 32-bit hex words (`memory_initialization_radix=16`).
+Hardware uses a plain-hex `.mem` file (one word per line) derived from the `.coe`
+so `$readmemh` can initialize the BRAM-backed ROM (`rtl/memory/haarcascade_rom.v`).
 
 ### 1.1 Global header
 - `word[0]`: `0x48415231` (`HAR1` magic)

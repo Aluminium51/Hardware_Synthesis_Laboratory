@@ -385,6 +385,9 @@ module top_basys3_ov7670_vga (
     wire        fd_done;
     wire        fd_face_found;
     reg         fd_start;
+    reg  [9:0]  fd_win_x_latched;
+    reg  [8:0]  fd_win_y_latched;
+    reg         fd_face_found_hold;
 
     wire [31:0] fd_rom_addr;
     wire        fd_rom_ren;
@@ -404,9 +407,15 @@ module top_basys3_ov7670_vga (
         .q_sync  (face_detect_en_cam)
     );
 
-    // Stub cascade ROM tie for top-level integration scaffolding.
-    // Replace with BRAM-backed cascade ROM when enabling face detection.
-    assign fd_rom_data = 32'd0;
+    haarcascade_rom #(
+        .ROM_WORDS (24471),
+        .MEM_FILE  ("rtl/memory/haarcascade_frontalface_q8.mem")
+    ) u_haarcascade_rom (
+        .clk  (cam_pclk),
+        .ren  (fd_rom_ren),
+        .addr (fd_rom_addr),
+        .data (fd_rom_data)
+    );
 
     integral_image_ram #(
         .IMAGE_WIDTH  (320),
@@ -444,12 +453,28 @@ module top_basys3_ov7670_vga (
         .window_data (fd_window_data)
     );
 
+    wire fd_start_next = fd_window_valid && !fd_busy;
+
     always @(posedge cam_pclk) begin
         if (capture_rst || !face_detect_en_cam) begin
             fd_start <= 1'b0;
+            fd_win_x_latched <= 10'd0;
+            fd_win_y_latched <= 9'd0;
+            fd_face_found_hold <= 1'b0;
         end else begin
             // Simple scheduler: evaluate next window when FSM is idle.
-            fd_start <= fd_window_valid && !fd_busy;
+            fd_start <= fd_start_next;
+
+            if (fd_start_next) begin
+                fd_win_x_latched <= fd_window_x;
+                fd_win_y_latched <= fd_window_y;
+            end
+
+            if (fd_frame_start) begin
+                fd_face_found_hold <= 1'b0;
+            end else if (fd_done && fd_face_found) begin
+                fd_face_found_hold <= 1'b1;
+            end
         end
     end
 
@@ -460,8 +485,8 @@ module top_basys3_ov7670_vga (
         .clk        (cam_pclk),
         .rst        (capture_rst || !face_detect_en_cam),
         .start      (fd_start),
-        .win_x      (fd_window_x),
-        .win_y      (fd_window_y),
+        .win_x      (fd_win_x_latched),
+        .win_y      (fd_win_y_latched),
         .rom_addr   (fd_rom_addr),
         .rom_ren    (fd_rom_ren),
         .rom_data   (fd_rom_data),
@@ -521,6 +546,168 @@ module top_basys3_ov7670_vga (
         .rgb565_out (filtered_rgb565)
     );
 
+    // Synchronize face detection signals from camera clock domain to VGA clock domain.
+    wire        fd_face_found_sys;
+    wire [9:0]  fd_window_x_sys;
+    wire [8:0]  fd_window_y_sys;
+
+    sync_2ff u_sync_fd_face_found_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_face_found_hold),
+        .q_sync  (fd_face_found_sys)
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_0 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[0]),
+        .q_sync  (fd_window_x_sys[0])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_1 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[1]),
+        .q_sync  (fd_window_x_sys[1])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_2 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[2]),
+        .q_sync  (fd_window_x_sys[2])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_3 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[3]),
+        .q_sync  (fd_window_x_sys[3])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_4 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[4]),
+        .q_sync  (fd_window_x_sys[4])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_5 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[5]),
+        .q_sync  (fd_window_x_sys[5])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_6 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[6]),
+        .q_sync  (fd_window_x_sys[6])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_7 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[7]),
+        .q_sync  (fd_window_x_sys[7])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_8 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[8]),
+        .q_sync  (fd_window_x_sys[8])
+    );
+
+    sync_2ff u_sync_fd_window_x_sys_9 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_x_latched[9]),
+        .q_sync  (fd_window_x_sys[9])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_0 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[0]),
+        .q_sync  (fd_window_y_sys[0])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_1 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[1]),
+        .q_sync  (fd_window_y_sys[1])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_2 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[2]),
+        .q_sync  (fd_window_y_sys[2])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_3 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[3]),
+        .q_sync  (fd_window_y_sys[3])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_4 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[4]),
+        .q_sync  (fd_window_y_sys[4])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_5 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[5]),
+        .q_sync  (fd_window_y_sys[5])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_6 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[6]),
+        .q_sync  (fd_window_y_sys[6])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_7 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[7]),
+        .q_sync  (fd_window_y_sys[7])
+    );
+
+    sync_2ff u_sync_fd_window_y_sys_8 (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (fd_win_y_latched[8]),
+        .q_sync  (fd_window_y_sys[8])
+    );
+
+    // Overlay face detection box on filtered video.
+    wire [15:0] overlay_rgb565;
+
+    vga_overlay_face u_vga_overlay_face (
+        .clk           (clk_100),
+        .rst           (rst_vga),
+        .vga_x         (x),
+        .vga_y         (y),
+        .active_video  (active_video_reader),
+        .face_found    (fd_face_found_sys),
+        .face_enable   (face_detect_en),
+        .window_x      (fd_window_x_sys),
+        .window_y      (fd_window_y_sys),
+        .rgb565_in     (filtered_rgb565),
+        .rgb565_out    (overlay_rgb565)
+    );
+
     function [3:0] round5_to4;
         input [4:0] value;
         reg [5:0] rounded;
@@ -550,7 +737,7 @@ module top_basys3_ov7670_vga (
         end
     endfunction
 
-    wire [11:0] filtered_rgb444 = rgb565_to_rgb444(filtered_rgb565);
+    wire [11:0] filtered_rgb444 = rgb565_to_rgb444(overlay_rgb565);
     wire [11:0] camera_rgb444 = (init_done && active_video_reader) ?
                                 filtered_rgb444 : 12'h000;
     wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;

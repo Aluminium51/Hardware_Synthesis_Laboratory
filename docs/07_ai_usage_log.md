@@ -36,12 +36,15 @@ Used for:
 - added a robust OpenCV Haar XML to Vivado `.coe` conversion flow with fixed-point quantization
 - added a synthesizable fixed-point Haar stage-evaluation FSM module (`face_detect.v`) with ROM and integral-image interfaces
 - added streaming line-buffer / 24x24 sliding-window RTL support for grayscale camera data
+- added BRAM-backed Haar cascade ROM wrapper and top-level hookup for live face detection
 - added integration documentation for ROM layout, fixed-point contract, and face-detect datapath wiring
 Files affected:
 - `scripts/vivado/haarcascade_to_coe.py`
 - `rtl/top/face_detect.v`
+- `rtl/memory/haarcascade_rom.v`
 - `rtl/util/linebuffer_ram.v`
 - `rtl/util/sliding_window_24.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
 - `docs/face_detect_haar_coe_and_pipeline.md`
 - `docs/07_ai_usage_log.md`
 Human review performed:
