@@ -30,6 +30,28 @@ Notes:
 
 ## Current entries
 
+### [2026-05-09]
+Tool: ChatGPT Codex
+Used for:
+- added a reset-sampled fast-XCLK probe for the existing full-VGA averaging path
+- kept the baseline 25 MHz camera clock intact while allowing `sw[7]=1, sw[6]=1` to drive `cam_xclk` at 50 MHz for a rate/noise experiment
+- updated the camera register ROM comments and docs so the fast-clock probe stays aligned with the existing noise A/B profiles
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/02_clock_domains.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/tasks/TASK-008-camera-rate-probe.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner will review the rate-probe behavior on hardware
+Notes:
+- this is an experimental probe, not a proven 60 fps guarantee
+- baseline camera capture and framebuffer architecture remain unchanged
+
 ### [2026-04-12]
 Tool: ChatGPT
 Used for:
@@ -725,6 +747,246 @@ Human review performed:
 Notes:
 - no RTL was changed by this report
 - recommended next tests focus on `COM16`, `COM9`, and `SATCTR` before changing matrix/AWB registers
+
+## 2026-05-09 - Implement OV7670 noise A/B profiles
+Tool: ChatGPT Codex
+Used for:
+- repurposed the `sw[7]=1` full-VGA averaging subprofiles from geometry variants into noise/color tuning variants
+- kept the hardware-selected 8-source-pixel full-VGA window fixed for all `sw[7]` subprofiles
+- added profile-dependent `COM16` and `SATCTR` values for hardware A/B testing
+- updated focused init testbench checks and bring-up documentation
+Files affected:
+- `rtl/camera/ov7670_reg_rom.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-005-ov7670-init.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/ov7670_noise_register_research.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner requested actual A/B test implementation after the research report
+Notes:
+- hardware should test `sw[7]=1`, `sw[6]=0`, and `sw[4:3]=00/01/10/11`, pressing `btnC` after each change
+- compare dark brown/black surfaces, lens-covered black frame, and a normal colorful scene
+
+## 2026-05-09 - Implement OV7670 full-resolution line-buffer stream
+Tool: ChatGPT Codex
+Used for:
+- added a separate full-resolution line-buffer streaming architecture beside the working framebuffer baseline
+- implemented line-ring capture, BRAM line banks, and VGA-side line consumption modules
+- updated the top-level to gate the stream path behind `sw[7]=1, sw[6]=1`
+- added a focused smoke test for the line-ring capture path
+- updated architecture, clock-domain, roadmap, task, and README documentation
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565_linefifo.v`
+- `rtl/memory/line_buffer_bank.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `docs/01_architecture.md`
+- `docs/02_clock_domains.md`
+- `docs/05_roadmap.md`
+- `docs/tasks/TASK-007-top-integration.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner requested the full-resolution pass-through architecture after confirming the 60 fps camera probe worked
+Notes:
+- the baseline framebuffer path remains intact
+- the line-ring stream is experimental and should be treated as a separate timing problem from the framebuffer design
+
+## 2026-05-11 - Fix full-resolution stream BRAM pressure and startup rolling risk
+Tool: ChatGPT Codex
+Used for:
+- added a stream-only top-level so the full-resolution experiment can synthesize without the baseline framebuffer and 2x2 averaging path
+- updated the VGA line-ring reader to require a two-line prefill before scanout and to blank on underflow
+- tightened the line-ring smoke test to verify reader output, read-pointer advance, and no underflow during bounded prefilled scanout
+- updated architecture, task, README, and AI usage documentation
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `docs/01_architecture.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported a rolling image and 100% BRAM utilization on the combined stream build
+Notes:
+- use the stream-only top for full-resolution hardware testing when BRAM utilization is the issue
+- the existing framebuffer baseline top remains available and still elaborates
+
+## 2026-05-11 - Prioritize camera-synchronized full-resolution stream
+Tool: ChatGPT Codex
+Used for:
+- added a stream-only VGA timing variant that can restart on a synchronized camera frame-start pulse
+- wired the stream top to derive camera frame start from the OV7670 `VSYNC` falling edge
+- updated the line FIFO reader to de-prime and reset its read pointer on frame sync
+- kept the baseline top on the original free-running VGA timing path
+- updated stream task, architecture, and README notes
+Files affected:
+- `rtl/vga/vga_timing_640x480_sync.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `README.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner requested prioritizing perfect sync while keeping fallback behavior
+Notes:
+- this tests camera-locked VGA output in the stream-only top
+- if the monitor dislikes the camera-synchronized frame period, the next fallback is controlled line repeat/drop with free-running VGA
+
+## 2026-05-11 - Restore standard VGA lock and add stream diagnostics
+Tool: ChatGPT Codex
+Used for:
+- restored the stream-only top to standard free-running VGA timing after hardware lost monitor lock
+- kept camera frame-start detection only as internal line-reader re-prime metadata
+- exposed line-reader queue depth and primed state for diagnostics
+- added stream diagnostic LED behavior for activity, primed queue, fast/overflow, and slow/underflow
+- synchronized stream overflow/drop status before using it in `clk_100` LED logic
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `README.md`
+- `docs/01_architecture.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported no monitor signal with LED0 blinking and LED1/LED2/LED3 stuck on
+Notes:
+- `sw[5]=1` should be the first hardware check because it bypasses camera video while preserving standard VGA timing
+- with `sw[2]=1`, LED2 indicates fast/overflow tendency and LED3 indicates slow/underflow tendency
+
+## 2026-05-11 - Make full-resolution line FIFO continuous
+Tool: ChatGPT Codex
+Used for:
+- stopped the stream camera writer from resetting line FIFO ownership pointers at camera `VSYNC`
+- stopped active stream readout from resetting its read pointer on camera frame-sync metadata
+- added line-repeat and line-drop correction events for low/high FIFO watermarks
+- extended stream diagnostic LEDs so LED2 includes drop/overflow and LED3 includes repeat/underflow
+- tightened the line FIFO smoke test to verify camera `VSYNC` does not reset the continuous write pointer
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565_linefifo.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported that standard VGA signal returned but the live image still rolled upward
+Notes:
+- the stream path now treats camera and VGA as independent rates bridged by a continuous elastic line FIFO
+- camera clock/register tuning should wait until hardware diagnostics show persistent drop or repeat corrections
+
+## 2026-05-11 - Add frame-aware seam diagnostics to stream path
+Tool: ChatGPT Codex
+Used for:
+- added per-bank camera line/frame-start metadata to the full-resolution line FIFO writer
+- added camera frame-wrap and active-seam detection to the VGA line FIFO reader
+- moved fast-drift drops into VGA vertical blanking where possible
+- scheduled slow-drift repeats at the top of active video instead of arbitrary active lines
+- changed stream diagnostic LEDs into `sw[4:3]` pages while `sw[2]=1`
+Files affected:
+- `rtl/camera/ov7670_capture_rgb565_linefifo.v`
+- `rtl/vga/vga_reader_linefifo.v`
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `sim/tb/tb_ov7670_linefifo_stream.sv`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported the black rolling gap shrank but the visible border between two rolling images remained
+Notes:
+- page `sw[2]=1, sw[4:3]=11` should be used to confirm whether the camera frame seam is still inside active video
+- a full-frame phase mismatch can be reduced by line-buffer control but cannot be perfectly hidden if the camera rate is too far from VGA
+
+## 2026-05-11 - Add stream timing probes for camera/VGA rate matching
+Tool: ChatGPT Codex
+Used for:
+- separated stream timing selection from diagnostic page selection in the stream-only top
+- made reset-sampled `sw[7:6]` select four full-VGA stream timing probes
+- added OV7670 ROM overrides for `CLKRC=0x01` and a manual PCLK-divider probe
+- extended the OV7670 init testbench to cover the new stream timing profiles
+Files affected:
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported diagnostic page `10` as frame seen, not near target, too fast, not too slow
+Notes:
+- after changing `sw[7:6]`, press reset so the stream timing selection is sampled before SCCB init
+- the target diagnostic for page `10` is LED0 on, LED1 on, LED2 off, LED3 off
+
+## 2026-05-11 - Replace stream timing probes with intermediate XCLK rates
+Tool: ChatGPT Codex
+Used for:
+- added a stream-only camera XCLK generator with 50 MHz, 40 MHz, 37.5 MHz, and 33.333 MHz outputs
+- changed `top_basys3_ov7670_vga_stream` so `sw[7:6]` selects XCLK rate while the OV7670 register profile stays fixed
+- removed the previous stream `CLKRC` and manual PCLK-divider timing overrides from the ROM
+- updated init tests and stream documentation for the intermediate-rate probe set
+Files affected:
+- `rtl/clocking/camera_xclk_mmcm.v`
+- `rtl/top/top_basys3_ov7670_vga_stream.v`
+- `rtl/camera/ov7670_reg_rom.v`
+- `sim/tb/tb_ov7670_init.sv`
+- `README.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported 50 MHz profiles too fast, 25 MHz/CLKRC profiles too slow, and manual PCLK divide still too fast
+Notes:
+- the next hardware pass should test page `sw[2]=1, sw[4:3]=10` for each XCLK rate after reset
+- a useful rate is the one where LED0 and LED1 are on while LED2 and LED3 are off
+
+## 2026-05-11 - Narrow stream XCLK sweep between 40 and 50 MHz
+Tool: ChatGPT Codex
+Used for:
+- changed the stream-only camera XCLK generator from a wide sweep to 50.000, 47.619, 45.455, and 43.478 MHz
+- kept the OV7670 stream register profile fixed so the hardware pass tests XCLK rate only
+- updated stream task, architecture, and README hardware notes for the narrow sweep
+Files affected:
+- `rtl/clocking/camera_xclk_mmcm.v`
+- `README.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported 50 MHz too fast and 40/37.5/33.333 MHz too slow
+Notes:
+- target diagnostic remains `sw[2]=1, sw[4:3]=10` with LED0 and LED1 on and LED2/LED3 off
+
+## 2026-05-11 - Fine stream XCLK sweep between 47.6 and 50 MHz
+Tool: ChatGPT Codex
+Used for:
+- changed the stream-only camera XCLK generator to 50.0, 49.5, 49.0, and 48.5 MHz
+- used exact fractional MMCM settings for the fine-rate probes
+- updated stream task, architecture, and README hardware notes
+Files affected:
+- `rtl/clocking/camera_xclk_mmcm.v`
+- `README.md`
+- `docs/tasks/TASK-009-fullres-line-buffer-stream.md`
+- `docs/01_architecture.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- repository owner reported 50 MHz too fast and 47.619 MHz already too slow
+Notes:
+- if all fine probes miss the target, the next sweep should be centered between the nearest too-fast and too-slow rates
 
 ## Future logging examples
 

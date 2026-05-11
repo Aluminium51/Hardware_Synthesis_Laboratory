@@ -29,6 +29,10 @@ This architecture was chosen because:
 - the filters chosen for baseline are all per-pixel and fit naturally on the readout path
 - it keeps the camera path focused on correct capture, not processing
 
+The working baseline still uses the single framebuffer path. A separate
+full-resolution line-buffer streaming experiment now exists beside it for the
+later 640x480 pass-through work, but it is not the baseline architecture.
+
 ## Module hierarchy
 
 ### Top level
@@ -38,6 +42,13 @@ Responsibilities:
 - connect board pins
 - wire debug LEDs and switches
 - own reset distribution
+
+#### `rtl/top/top_basys3_ov7670_vga_stream.v`
+Responsibilities:
+- provide a stream-only full-resolution experiment build
+- exclude the baseline framebuffer and 2x2 averaging path from synthesis
+- connect OV7670 full-VGA capture directly to the line-ring VGA reader
+- keep VGA timing free-running while the line ring absorbs camera/VGA rate drift
 
 ## Clocking and reset
 ### `rtl/clocking/reset_sync.v`
@@ -53,6 +64,7 @@ Completed baseline:
 - VGA timing remains in `clk_100` and advances with a 25 MHz `pixel_ce`
 - camera `XCLK` is generated in the top level with a simple divide-by-4 from `clk_100`
 - live OV7670 video is captured into the framebuffer and displayed through the VGA readout path
+- the `sw[7]=1, sw[6]=1` full-VGA experiment adds a 50 MHz camera XCLK probe while keeping the same framebuffer path
 
 ## VGA side
 ### `rtl/vga/vga_timing_640x480.v`
@@ -167,8 +179,31 @@ Responsibilities:
 
 This keeps the baseline framebuffer architecture unchanged while allowing a fair test of FPGA-side averaging against the OV7670 internal scaler profile.
 
+For later rate experiments, the same full-VGA averaging path can be reused with a faster `cam_xclk` probe selected from the top level without changing the framebuffer size or readout path.
+
 Verification:
 - A focused simulation reduces a 4x4 RGB565 source frame into 2x2 averaged framebuffer writes and checks write addresses, averaged pixel values, frame completion, and line diagnostics.
+
+### `rtl/camera/ov7670_capture_rgb565_linefifo.v`
+Responsibilities:
+- capture a full 640x480 RGB565 camera stream into a small ring of line buffers
+- emit line-commit ownership through a compact pointer/token boundary
+- keep camera-domain write timing separate from VGA-domain line consumption
+- keep line FIFO ownership pointers continuous across camera `VSYNC`; frame boundaries reset camera parsing state, not line-ring ownership
+- tag each line-buffer bank with camera line number and first-line-after-`VSYNC` metadata for seam diagnostics
+- support the reset-sampled `sw[7]=1, sw[6]=1` full-resolution streaming experiment
+
+Supporting modules:
+- `rtl/memory/line_buffer_bank.v`
+- `rtl/vga/vga_reader_linefifo.v`
+
+This is the first-step architecture for full-resolution display without a full
+framebuffer. It remains experimental until the line ownership, read timing, and
+hardware lock behavior are proven on the board.
+
+The stream-only top-level should be used for synthesis when BRAM utilization is
+the limiting factor. The combined baseline top still contains both architectures
+for elaboration/debug convenience and is not the memory-minimized build.
 
 ## Utility
 ### `rtl/util/debounce.v`
@@ -204,6 +239,18 @@ Used only for buttons if threshold or reset control needs button input.
 ### Stage F: full integration
 - live camera -> BRAM -> filter -> VGA
 - hardware validation passed on 2026-05-07 for raw and baseline filtered display modes
+
+### Stage G: full-resolution streaming experiment
+- live camera -> line ring -> VGA
+- no full-frame BRAM storage
+- one-line-latency pass-through experiment for 640x480 display
+- separate from the baseline framebuffer pipeline
+- free-running standard VGA timing for monitor lock
+- continuous line FIFO pointers across camera frames
+- camera frame timing used only for stream re-prime metadata and diagnostics
+- camera frame-wrap detection in the VGA reader
+- vblank-first line-drop correction for fast drift and top-of-frame repeat correction for slow drift
+- reset-sampled `sw[7:6]` timing probes in the stream-only top to compare 50 MHz, 49.5 MHz, 49.0 MHz, and 48.5 MHz camera XCLK behavior
 
 ## Debug philosophy
 Bring-up must be staged.

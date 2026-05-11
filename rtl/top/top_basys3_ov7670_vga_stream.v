@@ -1,12 +1,11 @@
 `timescale 1ns/1ps
 
-// top_basys3_ov7670_vga
-// Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
+// top_basys3_ov7670_vga_stream
+// Purpose: OV7670 full-resolution line-buffer stream experiment for VGA output.
 // Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
 // Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
-// Inputs: slide switches select VGA test-pattern/filter/profile mode; buttons adjust threshold.
-// Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
-module top_basys3_ov7670_vga (
+// Assumptions: XCLK is fixed at the 50 MHz stream baseline; sw[2] enables diagnostics.
+module top_basys3_ov7670_vga_stream (
     input  wire        clk_100,
     input  wire        btnC,
     input  wire        btnU,
@@ -37,8 +36,6 @@ module top_basys3_ov7670_vga (
         .rst_sync  (rst_sys)
     );
 
-    wire rst_vga = rst_sys;
-
     wire [7:0] sw_sync;
 
     genvar sw_i;
@@ -56,17 +53,15 @@ module top_basys3_ov7670_vga (
     wire       debug_pattern_en = sw_sync[5];
     wire       camera_diag_en = sw_sync[2];
     wire [1:0] filter_mode = sw_sync[1:0];
-    reg  [3:0] camera_profile = 4'b0000;
+    reg  [3:0] camera_profile = 4'b1100;
+    reg  [1:0] stream_timing_profile = 2'b00;
 
-    // Camera profile switches are sampled only during btnC reset.
-    // sw[4:3] selects the base profile. sw[6] selects the OV7670 internal
-    // averaged-QVGA experiment when sw[7]=0. sw[7] selects full-VGA sensor
-    // output with FPGA-side 2x2 averaging; sw[4:3] selects noise/color
-    // register A/B variants, and sw[6]=1 becomes the fast-XCLK probe for the
-    // full-VGA experiment path.
+    // Stream-only build: keep XCLK fixed at the 50 MHz baseline and use
+    // sw[4:3] only for live diagnostic page selects when sw[2] is enabled.
     always @(posedge clk_100) begin
         if (rst_sys) begin
-            camera_profile <= {sw[7], sw[6], sw[4:3]};
+            stream_timing_profile <= 2'b00;
+            camera_profile <= 4'b1100;
         end
     end
 
@@ -102,15 +97,68 @@ module top_basys3_ov7670_vga (
     wire [3:0] filter_threshold = filter_threshold_reg;
 
     reg [1:0] pixel_div = 2'd0;
-    reg [1:0] xclk_div = 2'd0;
 
     always @(posedge clk_100) begin
         if (rst_sys) begin
             pixel_div <= 2'd0;
-            xclk_div  <= 2'd0;
         end else begin
             pixel_div <= pixel_div + 1'b1;
-            xclk_div  <= xclk_div + 1'b1;
+        end
+    end
+
+    wire xclk_locked;
+    wire rst_config = rst_sys || !xclk_locked;
+
+    camera_xclk_mmcm u_camera_xclk_mmcm (
+        .clk_100  (clk_100),
+        .rst      (rst_sys),
+        .rate_sel (stream_timing_profile),
+        .cam_xclk (cam_xclk),
+        .locked   (xclk_locked)
+    );
+
+    wire cam_vsync_sys;
+    reg  cam_vsync_sys_d = 1'b0;
+    reg  cam_frame_start_pending = 1'b0;
+    reg [31:0] cam_frame_cycle_count = 32'd0;
+    reg [31:0] cam_frame_period = 32'd0;
+    reg        cam_frame_seen = 1'b0;
+
+    sync_2ff u_sync_cam_vsync_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (cam_vsync),
+        .q_sync  (cam_vsync_sys)
+    );
+
+    wire cam_frame_start_sys = cam_vsync_sys_d && !cam_vsync_sys;
+    wire cam_frame_sync_sys = cam_frame_start_pending;
+
+    localparam [31:0] VGA_FRAME_CLKS = 32'd1680000;
+    localparam [31:0] FRAME_TOL_CLKS = 32'd42000;
+    wire cam_too_fast = cam_frame_seen &&
+                        (cam_frame_period < (VGA_FRAME_CLKS - FRAME_TOL_CLKS));
+    wire cam_too_slow = cam_frame_seen &&
+                        (cam_frame_period > (VGA_FRAME_CLKS + FRAME_TOL_CLKS));
+
+    always @(posedge clk_100) begin
+        if (rst_sys) begin
+            cam_vsync_sys_d <= 1'b0;
+            cam_frame_start_pending <= 1'b0;
+            cam_frame_cycle_count <= 32'd0;
+            cam_frame_period <= 32'd0;
+            cam_frame_seen <= 1'b0;
+        end else begin
+            cam_vsync_sys_d <= cam_vsync_sys;
+            cam_frame_cycle_count <= cam_frame_cycle_count + 1'b1;
+            if (cam_frame_start_sys) begin
+                cam_frame_start_pending <= 1'b1;
+                cam_frame_period <= cam_frame_cycle_count;
+                cam_frame_cycle_count <= 32'd0;
+                cam_frame_seen <= 1'b1;
+            end else if (pixel_ce && cam_frame_start_pending) begin
+                cam_frame_start_pending <= 1'b0;
+            end
         end
     end
 
@@ -131,7 +179,6 @@ module top_basys3_ov7670_vga (
                 btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
             end else begin
                 btnU_count <= btnU_count + 1'b1;
-
                 if (&btnU_count) begin
                     btnU_state <= btnU_sync;
                     btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
@@ -142,7 +189,6 @@ module top_basys3_ov7670_vga (
                 btnD_count <= {BTN_DEBOUNCE_BITS{1'b0}};
             end else begin
                 btnD_count <= btnD_count + 1'b1;
-
                 if (&btnD_count) begin
                     btnD_state <= btnD_sync;
                     btnD_count <= {BTN_DEBOUNCE_BITS{1'b0}};
@@ -158,19 +204,16 @@ module top_basys3_ov7670_vga (
     end
 
     wire pixel_ce = (pixel_div == 2'd3);
-    wire cam_xclk_fast_en = camera_profile[3] && camera_profile[2];
-    assign cam_xclk = cam_xclk_fast_en ? xclk_div[0] : xclk_div[1];
-
-    wire       hsync_timing;
-    wire       vsync_timing;
-    wire       active_video;
+    wire hsync_timing;
+    wire vsync_timing;
+    wire active_video;
     wire [9:0] x;
     wire [9:0] y;
 
     vga_timing_640x480 u_vga_timing (
         .clk_100      (clk_100),
         .pixel_ce     (pixel_ce),
-        .rst_vga      (rst_vga),
+        .rst_vga      (rst_sys),
         .hsync        (hsync_timing),
         .vsync        (vsync_timing),
         .active_video (active_video),
@@ -202,7 +245,7 @@ module top_basys3_ov7670_vga (
 
     ov7670_init u_ov7670_init (
         .clk            (clk_100),
-        .rst            (rst_sys),
+        .rst            (rst_config),
         .start_init     (1'b1),
         .profile        (camera_profile),
         .sccb_busy      (sccb_busy),
@@ -221,7 +264,7 @@ module top_basys3_ov7670_vga (
         .SCCB_HALF_PERIOD_CLKS (5000)
     ) u_ov7670_sccb_master (
         .clk       (clk_100),
-        .rst       (rst_sys),
+        .rst       (rst_config),
         .start     (sccb_start),
         .dev_addr  (sccb_dev_addr),
         .reg_addr  (sccb_reg_addr),
@@ -235,7 +278,6 @@ module top_basys3_ov7670_vga (
         .siod_out  (siod_out)
     );
 
-    // SCCB uses an open-drain data line, so only drive low or release.
     assign cam_siod = (siod_oe && !siod_out) ? 1'b0 : 1'bz;
     assign siod_in  = cam_siod;
 
@@ -261,109 +303,38 @@ module top_basys3_ov7670_vga (
 
     wire capture_rst = rst_cam_button || !init_done_cam;
 
-    wire        capture_wr_en;
-    wire [16:0] capture_wr_addr;
-    wire [15:0] capture_wr_data;
-    wire        capture_frame_done;
-    wire        capture_dbg_line_seen;
-    wire        capture_dbg_line_ge_width;
-    wire        capture_dbg_line_ge_width_plus_1;
-    wire        capture_dbg_line_ge_width_plus_extra;
-    wire        full_avg_capture_en = camera_profile[3] && !camera_profile[2];
-    wire        line_stream_en = camera_profile[3] && camera_profile[2];
-
-    wire        stable_capture_wr_en;
-    wire [16:0] stable_capture_wr_addr;
-    wire [15:0] stable_capture_wr_data;
-    wire        stable_capture_frame_done;
-    wire        stable_capture_dbg_line_seen;
-    wire        stable_capture_dbg_line_ge_width;
-    wire        stable_capture_dbg_line_ge_width_plus_1;
-    wire        stable_capture_dbg_line_ge_width_plus_extra;
-
-    ov7670_capture_rgb565 #(
-        .SKIP_LEFT_PIXELS (0),
-        .SKIP_TOP_LINES   (0)
-    ) u_ov7670_capture (
-        .pclk         (cam_pclk),
-        .rst          (capture_rst),
-        .vsync        (cam_vsync),
-        .href         (cam_href),
-        .cam_d        (cam_d),
-        .wr_en        (stable_capture_wr_en),
-        .wr_addr      (stable_capture_wr_addr),
-        .wr_data      (stable_capture_wr_data),
-        .frame_done   (stable_capture_frame_done),
-        .frame_active (),
-        .dbg_line_seen (stable_capture_dbg_line_seen),
-        .dbg_line_ge_width (stable_capture_dbg_line_ge_width),
-        .dbg_line_ge_width_plus_1 (stable_capture_dbg_line_ge_width_plus_1),
-        .dbg_line_ge_width_plus_extra (stable_capture_dbg_line_ge_width_plus_extra)
-    );
-
-    wire        avg_capture_wr_en;
-    wire [16:0] avg_capture_wr_addr;
-    wire [15:0] avg_capture_wr_data;
-    wire        avg_capture_frame_done;
-    wire        avg_capture_dbg_line_seen;
-    wire        avg_capture_dbg_line_ge_width;
-    wire        avg_capture_dbg_line_ge_width_plus_1;
-    wire        avg_capture_dbg_line_ge_width_plus_extra;
-
-    ov7670_capture_rgb565_2x2_avg u_ov7670_capture_2x2_avg (
-        .pclk         (cam_pclk),
-        .rst          (capture_rst),
-        .vsync        (cam_vsync),
-        .href         (cam_href),
-        .cam_d        (cam_d),
-        .wr_en        (avg_capture_wr_en),
-        .wr_addr      (avg_capture_wr_addr),
-        .wr_data      (avg_capture_wr_data),
-        .frame_done   (avg_capture_frame_done),
-        .frame_active (),
-        .dbg_line_seen (avg_capture_dbg_line_seen),
-        .dbg_line_ge_width (avg_capture_dbg_line_ge_width),
-        .dbg_line_ge_width_plus_1 (avg_capture_dbg_line_ge_width_plus_1),
-        .dbg_line_ge_width_plus_extra (avg_capture_dbg_line_ge_width_plus_extra)
-    );
-
-    assign capture_wr_en = line_stream_en ? 1'b0 :
-                           (full_avg_capture_en ? avg_capture_wr_en : stable_capture_wr_en);
-    assign capture_wr_addr = line_stream_en ? 17'd0 :
-                             (full_avg_capture_en ? avg_capture_wr_addr : stable_capture_wr_addr);
-    assign capture_wr_data = line_stream_en ? 16'd0 :
-                             (full_avg_capture_en ? avg_capture_wr_data : stable_capture_wr_data);
-    assign capture_frame_done = line_stream_en ? stream_frame_done :
-                                (full_avg_capture_en ? avg_capture_frame_done : stable_capture_frame_done);
-    assign capture_dbg_line_seen = line_stream_en ? stream_dbg_line_seen :
-                                   (full_avg_capture_en ? avg_capture_dbg_line_seen : stable_capture_dbg_line_seen);
-    assign capture_dbg_line_ge_width = line_stream_en ? stream_dbg_line_ge_width :
-                                       (full_avg_capture_en ? avg_capture_dbg_line_ge_width : stable_capture_dbg_line_ge_width);
-    assign capture_dbg_line_ge_width_plus_1 = line_stream_en ? stream_dbg_line_ge_width_plus_1 :
-                                              (full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_1 : stable_capture_dbg_line_ge_width_plus_1);
-    assign capture_dbg_line_ge_width_plus_extra = line_stream_en ? stream_dbg_line_ge_width_plus_extra :
-                                                  (full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_extra : stable_capture_dbg_line_ge_width_plus_extra);
-
     wire [2:0] stream_wr_gray_cam;
     wire [2:0] stream_wr_gray_sys;
-    wire [2:0] stream_rd_gray_sys;
+    wire [2:0] stream_rd_gray;
     wire [2:0] stream_rd_gray_cam;
     wire [1:0] stream_wr_bank;
     wire [9:0] stream_wr_addr;
     wire [15:0] stream_wr_data;
-    wire       stream_wr_en;
-    wire       stream_frame_done;
-    wire       stream_frame_active;
-    wire       stream_overflow;
-    wire       stream_frame_drop;
-    wire       stream_dbg_line_seen;
-    wire       stream_dbg_line_ge_width;
-    wire       stream_dbg_line_ge_width_plus_1;
-    wire       stream_dbg_line_ge_width_plus_extra;
-    wire [2:0] stream_rd_gray;
-    wire [1:0] stream_rd_bank;
-    wire [9:0] stream_rd_addr;
-    wire       stream_rd_en;
+    wire        stream_wr_en;
+    wire        stream_frame_done;
+    wire        stream_overflow;
+    wire        stream_frame_drop;
+    wire        stream_dbg_line_seen;
+    wire        stream_dbg_line_ge_width;
+    wire        stream_dbg_line_ge_width_plus_1;
+    wire        stream_dbg_line_ge_width_plus_extra;
+    wire [35:0] stream_bank_line_y_cam;
+    wire [35:0] stream_bank_line_y_sys;
+    wire [3:0]  stream_bank_frame_start_cam;
+    wire [3:0]  stream_bank_frame_start_sys;
+    wire [1:0]  stream_rd_bank;
+    wire [9:0]  stream_rd_addr;
+    wire        stream_rd_en;
+    wire        stream_underflow;
+    wire        stream_line_repeat_event;
+    wire        stream_line_drop_event;
+    wire        stream_frame_wrap_event;
+    wire        stream_seam_active_event;
+    wire        stream_vblank_repeat_event;
+    wire        stream_vblank_drop_event;
+    wire        stream_frame_resync_event;
+    wire [2:0]  stream_lines_available_sys;
+    wire        stream_ready_sys;
     wire [15:0] stream_bank0_rd_data;
     wire [15:0] stream_bank1_rd_data;
     wire [15:0] stream_bank2_rd_data;
@@ -397,6 +368,28 @@ module top_basys3_ov7670_vga (
         end
     endgenerate
 
+    generate
+        for (stream_sync_i = 0; stream_sync_i < 36; stream_sync_i = stream_sync_i + 1) begin : gen_stream_line_y_sync
+            sync_2ff u_sync_stream_line_y (
+                .clk     (clk_100),
+                .rst     (rst_sys),
+                .d_async (stream_bank_line_y_cam[stream_sync_i]),
+                .q_sync  (stream_bank_line_y_sys[stream_sync_i])
+            );
+        end
+    endgenerate
+
+    generate
+        for (stream_sync_i = 0; stream_sync_i < 4; stream_sync_i = stream_sync_i + 1) begin : gen_stream_frame_start_sync
+            sync_2ff u_sync_stream_frame_start (
+                .clk     (clk_100),
+                .rst     (rst_sys),
+                .d_async (stream_bank_frame_start_cam[stream_sync_i]),
+                .q_sync  (stream_bank_frame_start_sys[stream_sync_i])
+            );
+        end
+    endgenerate
+
     ov7670_capture_rgb565_linefifo #(
         .LINE_PIXELS     (640),
         .LINE_HEIGHT     (480),
@@ -417,26 +410,15 @@ module top_basys3_ov7670_vga (
         .wr_data                  (stream_wr_data),
         .wr_en                    (stream_wr_en),
         .frame_done               (stream_frame_done),
-        .frame_active             (stream_frame_active),
+        .frame_active             (),
         .overflow                 (stream_overflow),
         .frame_drop               (stream_frame_drop),
+        .bank_line_y              (stream_bank_line_y_cam),
+        .bank_frame_start         (stream_bank_frame_start_cam),
         .dbg_line_seen            (stream_dbg_line_seen),
         .dbg_line_ge_width        (stream_dbg_line_ge_width),
         .dbg_line_ge_width_plus_1 (stream_dbg_line_ge_width_plus_1),
         .dbg_line_ge_width_plus_extra (stream_dbg_line_ge_width_plus_extra)
-    );
-
-    wire [16:0] fb_rd_addr;
-    wire [15:0] fb_rd_data;
-
-    framebuffer_bram u_framebuffer (
-        .wr_clk  (cam_pclk),
-        .wr_en   (capture_wr_en),
-        .wr_addr (capture_wr_addr),
-        .wr_data (capture_wr_data),
-        .rd_clk  (clk_100),
-        .rd_addr (fb_rd_addr),
-        .rd_data (fb_rd_data)
     );
 
     wire stream_bank0_wr_en = stream_wr_en && (stream_wr_bank == 2'd0);
@@ -448,11 +430,7 @@ module top_basys3_ov7670_vga (
     wire stream_bank2_rd_en = stream_rd_en && (stream_rd_bank == 2'd2);
     wire stream_bank3_rd_en = stream_rd_en && (stream_rd_bank == 2'd3);
 
-    line_buffer_bank #(
-        .DATA_WIDTH (16),
-        .LINE_PIXELS (640),
-        .ADDR_WIDTH (10)
-    ) u_stream_bank0 (
+    line_buffer_bank u_stream_bank0 (
         .wr_clk  (cam_pclk),
         .wr_en   (stream_bank0_wr_en),
         .wr_addr (stream_wr_addr),
@@ -463,11 +441,7 @@ module top_basys3_ov7670_vga (
         .rd_data (stream_bank0_rd_data)
     );
 
-    line_buffer_bank #(
-        .DATA_WIDTH (16),
-        .LINE_PIXELS (640),
-        .ADDR_WIDTH (10)
-    ) u_stream_bank1 (
+    line_buffer_bank u_stream_bank1 (
         .wr_clk  (cam_pclk),
         .wr_en   (stream_bank1_wr_en),
         .wr_addr (stream_wr_addr),
@@ -478,11 +452,7 @@ module top_basys3_ov7670_vga (
         .rd_data (stream_bank1_rd_data)
     );
 
-    line_buffer_bank #(
-        .DATA_WIDTH (16),
-        .LINE_PIXELS (640),
-        .ADDR_WIDTH (10)
-    ) u_stream_bank2 (
+    line_buffer_bank u_stream_bank2 (
         .wr_clk  (cam_pclk),
         .wr_en   (stream_bank2_wr_en),
         .wr_addr (stream_wr_addr),
@@ -493,11 +463,7 @@ module top_basys3_ov7670_vga (
         .rd_data (stream_bank2_rd_data)
     );
 
-    line_buffer_bank #(
-        .DATA_WIDTH (16),
-        .LINE_PIXELS (640),
-        .ADDR_WIDTH (10)
-    ) u_stream_bank3 (
+    line_buffer_bank u_stream_bank3 (
         .wr_clk  (cam_pclk),
         .wr_en   (stream_bank3_wr_en),
         .wr_addr (stream_wr_addr),
@@ -508,52 +474,31 @@ module top_basys3_ov7670_vga (
         .rd_data (stream_bank3_rd_data)
     );
 
-    wire        hsync_reader;
-    wire        vsync_reader;
-    wire        active_video_reader;
-    wire [15:0] reader_rgb565;
-
-    vga_reader_320x240 u_vga_reader (
-        .clk_100          (clk_100),
-        .pixel_ce         (pixel_ce),
-        .rst_vga          (rst_vga),
-        .vga_x            (x),
-        .vga_y            (y),
-        .hsync_in         (hsync_timing),
-        .vsync_in         (vsync_timing),
-        .active_video_in  (active_video),
-        .rd_data          (fb_rd_data),
-        .rd_addr          (fb_rd_addr),
-        .hsync_out        (hsync_reader),
-        .vsync_out        (vsync_reader),
-        .active_video_out (active_video_reader),
-        .rgb565_out       (reader_rgb565)
-    );
-
     wire        stream_hsync_reader;
     wire        stream_vsync_reader;
     wire        stream_active_video_reader;
     wire [15:0] stream_rgb565_reader;
 
     vga_reader_linefifo #(
-        .LINE_PIXELS    (640),
-        .BANK_COUNT     (4),
-        .BANK_SEL_WIDTH (2),
-        .PTR_WIDTH      (3),
-        .ADDR_WIDTH     (10)
+        .LINE_PIXELS       (640),
+        .BANK_COUNT        (4),
+        .BANK_SEL_WIDTH    (2),
+        .PTR_WIDTH         (3),
+        .ADDR_WIDTH        (10),
+        .MIN_PREFILL_LINES (2)
     ) u_vga_reader_linefifo (
         .clk_100          (clk_100),
         .pixel_ce         (pixel_ce),
-        .rst_vga          (rst_vga),
+        .rst_vga          (rst_sys),
         .vga_x            (x),
         .vga_y            (y),
         .hsync_in         (hsync_timing),
         .vsync_in         (vsync_timing),
         .active_video_in  (active_video),
-        .frame_sync       (1'b0),
+        .frame_sync       (cam_frame_sync_sys),
         .wr_gray_sync     (stream_wr_gray_sys),
-        .bank_line_y      (36'd0),
-        .bank_frame_start (4'b0000),
+        .bank_line_y      (stream_bank_line_y_sys),
+        .bank_frame_start (stream_bank_frame_start_sys),
         .rd_data          (stream_rd_data),
         .rd_gray          (stream_rd_gray),
         .rd_bank          (stream_rd_bank),
@@ -563,22 +508,22 @@ module top_basys3_ov7670_vga (
         .vsync_out        (stream_vsync_reader),
         .active_video_out (stream_active_video_reader),
         .rgb565_out       (stream_rgb565_reader),
-        .underflow        (),
-        .line_repeat_event (),
-        .line_drop_event   (),
-        .frame_wrap_event  (),
-        .seam_active_event (),
-        .vblank_repeat_event (),
-        .vblank_drop_event (),
-        .lines_available_dbg (),
-        .stream_ready_dbg ()
+        .underflow        (stream_underflow),
+        .line_repeat_event (stream_line_repeat_event),
+        .line_drop_event   (stream_line_drop_event),
+        .frame_wrap_event  (stream_frame_wrap_event),
+        .seam_active_event (stream_seam_active_event),
+        .vblank_repeat_event (stream_vblank_repeat_event),
+        .vblank_drop_event (stream_vblank_drop_event),
+        .frame_resync_event (stream_frame_resync_event),
+        .lines_available_dbg (stream_lines_available_sys),
+        .stream_ready_dbg (stream_ready_sys)
     );
 
-    wire [15:0] display_source_rgb565 = line_stream_en ? stream_rgb565_reader : reader_rgb565;
     wire [15:0] filtered_rgb565;
 
     video_filter_basic u_video_filter_basic (
-        .rgb565_in  (display_source_rgb565),
+        .rgb565_in  (stream_rgb565_reader),
         .mode       (filter_mode),
         .threshold  (filter_threshold),
         .rgb565_out (filtered_rgb565)
@@ -614,70 +559,86 @@ module top_basys3_ov7670_vga (
     endfunction
 
     wire [11:0] filtered_rgb444 = rgb565_to_rgb444(filtered_rgb565);
-    wire        display_active_video = line_stream_en ? stream_active_video_reader : active_video_reader;
-    wire [11:0] camera_rgb444 = (init_done && display_active_video) ?
+    wire [11:0] camera_rgb444 = (init_done && stream_active_video_reader) ?
                                 filtered_rgb444 : 12'h000;
     wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;
-    wire        display_hsync = debug_pattern_en ? hsync_timing :
-                                (line_stream_en ? stream_hsync_reader : hsync_reader);
-    wire        display_vsync = debug_pattern_en ? vsync_timing :
-                                (line_stream_en ? stream_vsync_reader : vsync_reader);
 
-    reg [25:0] heartbeat = 26'd0;
-
-    always @(posedge clk_100) begin
-        if (rst_sys) begin
-            heartbeat <= 26'd0;
-        end else begin
-            heartbeat <= heartbeat + 1'b1;
-        end
-    end
-
-    reg frame_done_toggle = 1'b0;
-
-    always @(posedge cam_pclk) begin
-        if (capture_rst) begin
-            frame_done_toggle <= 1'b0;
-        end else if (capture_frame_done) begin
-            frame_done_toggle <= ~frame_done_toggle;
-        end
-    end
-
-    wire frame_done_toggle_sys;
-
-    sync_2ff u_sync_frame_done_toggle_sys (
-        .clk     (clk_100),
-        .rst     (rst_sys),
-        .d_async (frame_done_toggle),
-        .q_sync  (frame_done_toggle_sys)
-    );
-
-    reg        frame_done_toggle_sys_d = 1'b0;
-    reg [23:0] frame_activity_hold = 24'd0;
-
-    wire frame_done_event_sys = frame_done_toggle_sys ^ frame_done_toggle_sys_d;
-
-    always @(posedge clk_100) begin
-        if (rst_sys) begin
-            frame_done_toggle_sys_d <= 1'b0;
-            frame_activity_hold     <= 24'd0;
-        end else begin
-            frame_done_toggle_sys_d <= frame_done_toggle_sys;
-
-            if (frame_done_event_sys) begin
-                frame_activity_hold <= 24'hffffff;
-            end else if (frame_activity_hold != 24'd0) begin
-                frame_activity_hold <= frame_activity_hold - 1'b1;
-            end
-        end
-    end
-
-    assign Hsync = display_hsync;
-    assign Vsync = display_vsync;
-
+    assign Hsync = debug_pattern_en ? hsync_timing : stream_hsync_reader;
+    assign Vsync = debug_pattern_en ? vsync_timing : stream_vsync_reader;
     assign vgaRed   = display_rgb444[11:8];
     assign vgaGreen = display_rgb444[7:4];
     assign vgaBlue  = display_rgb444[3:0];
+
+    wire stream_overflow_sys;
+    wire stream_frame_drop_sys;
+
+    sync_2ff u_sync_stream_overflow_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (stream_overflow),
+        .q_sync  (stream_overflow_sys)
+    );
+
+    sync_2ff u_sync_stream_frame_drop_sys (
+        .clk     (clk_100),
+        .rst     (rst_sys),
+        .d_async (stream_frame_drop),
+        .q_sync  (stream_frame_drop_sys)
+    );
+
+    reg [25:0] heartbeat = 26'd0;
+    reg stream_underflow_sticky = 1'b0;
+    reg stream_overflow_sticky = 1'b0;
+    reg stream_repeat_sticky = 1'b0;
+    reg stream_drop_sticky = 1'b0;
+    reg stream_frame_wrap_sticky = 1'b0;
+    reg stream_seam_active_sticky = 1'b0;
+    reg stream_vblank_repeat_sticky = 1'b0;
+    reg stream_vblank_drop_sticky = 1'b0;
+    reg stream_frame_resync_sticky = 1'b0;
+    always @(posedge clk_100) begin
+        if (rst_sys) begin
+            heartbeat <= 26'd0;
+            stream_underflow_sticky <= 1'b0;
+            stream_overflow_sticky <= 1'b0;
+            stream_repeat_sticky <= 1'b0;
+            stream_drop_sticky <= 1'b0;
+            stream_frame_wrap_sticky <= 1'b0;
+            stream_seam_active_sticky <= 1'b0;
+            stream_vblank_repeat_sticky <= 1'b0;
+            stream_vblank_drop_sticky <= 1'b0;
+            stream_frame_resync_sticky <= 1'b0;
+        end else begin
+            heartbeat <= heartbeat + 1'b1;
+            if (stream_underflow) begin
+                stream_underflow_sticky <= 1'b1;
+            end
+            if (stream_overflow_sys || stream_frame_drop_sys) begin
+                stream_overflow_sticky <= 1'b1;
+            end
+            if (stream_line_repeat_event) begin
+                stream_repeat_sticky <= 1'b1;
+            end
+            if (stream_line_drop_event) begin
+                stream_drop_sticky <= 1'b1;
+            end
+            if (stream_frame_wrap_event) begin
+                stream_frame_wrap_sticky <= 1'b1;
+            end
+            if (stream_seam_active_event) begin
+                stream_seam_active_sticky <= 1'b1;
+            end
+            if (stream_vblank_repeat_event) begin
+                stream_vblank_repeat_sticky <= 1'b1;
+            end
+            if (stream_vblank_drop_event) begin
+                stream_vblank_drop_sticky <= 1'b1;
+            end
+            if (stream_frame_resync_event) begin
+                stream_frame_resync_sticky <= 1'b1;
+            end
+        end
+    end
 
     wire dbg_line_seen_sys;
     wire dbg_line_ge_width_sys;
@@ -687,35 +648,71 @@ module top_basys3_ov7670_vga (
     sync_2ff u_sync_dbg_line_seen_sys (
         .clk     (clk_100),
         .rst     (rst_sys),
-        .d_async (capture_dbg_line_seen),
+        .d_async (stream_dbg_line_seen),
         .q_sync  (dbg_line_seen_sys)
     );
 
     sync_2ff u_sync_dbg_line_ge_width_sys (
         .clk     (clk_100),
         .rst     (rst_sys),
-        .d_async (capture_dbg_line_ge_width),
+        .d_async (stream_dbg_line_ge_width),
         .q_sync  (dbg_line_ge_width_sys)
     );
 
     sync_2ff u_sync_dbg_line_ge_width_plus_1_sys (
         .clk     (clk_100),
         .rst     (rst_sys),
-        .d_async (capture_dbg_line_ge_width_plus_1),
+        .d_async (stream_dbg_line_ge_width_plus_1),
         .q_sync  (dbg_line_ge_width_plus_1_sys)
     );
 
     sync_2ff u_sync_dbg_line_ge_width_plus_extra_sys (
         .clk     (clk_100),
         .rst     (rst_sys),
-        .d_async (capture_dbg_line_ge_width_plus_extra),
+        .d_async (stream_dbg_line_ge_width_plus_extra),
         .q_sync  (dbg_line_ge_width_plus_extra_sys)
     );
 
-    assign led[0] = camera_diag_en ? dbg_line_seen_sys : heartbeat[25];
-    assign led[1] = camera_diag_en ? dbg_line_ge_width_sys : init_done;
-    assign led[2] = camera_diag_en ? dbg_line_ge_width_plus_1_sys : init_error;
-    assign led[3] = camera_diag_en ? dbg_line_ge_width_plus_extra_sys :
-                                     (frame_activity_hold != 24'd0);
+    wire stream_diag_activity = dbg_line_seen_sys || cam_frame_seen;
+    wire stream_diag_primed = stream_ready_sys || (stream_lines_available_sys >= 3'd2);
+    wire stream_diag_queue_low = stream_lines_available_sys <= 3'd1;
+    wire stream_diag_queue_high = stream_lines_available_sys >= 3'd3;
+    wire cam_near_target = cam_frame_seen && !cam_too_fast && !cam_too_slow;
+
+    wire [3:0] stream_diag_page_queue = {
+        stream_diag_queue_high,
+        stream_diag_queue_low,
+        stream_diag_primed,
+        stream_diag_activity
+    };
+    wire [3:0] stream_diag_page_sticky = {
+        stream_repeat_sticky,
+        stream_drop_sticky,
+        stream_underflow_sticky,
+        stream_overflow_sticky
+    };
+    wire [3:0] stream_diag_page_rate = {
+        cam_too_slow,
+        cam_too_fast,
+        cam_near_target,
+        cam_frame_seen
+    };
+    wire [3:0] stream_diag_page_seam = {
+        stream_frame_resync_sticky,
+        stream_seam_active_sticky,
+        stream_vblank_drop_sticky,
+        stream_vblank_repeat_sticky
+    };
+
+    wire [3:0] stream_diag_led =
+        (sw_sync[4:3] == 2'b00) ? stream_diag_page_queue :
+        (sw_sync[4:3] == 2'b01) ? stream_diag_page_sticky :
+        (sw_sync[4:3] == 2'b10) ? stream_diag_page_rate :
+                                  stream_diag_page_seam;
+
+    assign led[0] = camera_diag_en ? stream_diag_led[0] : heartbeat[25];
+    assign led[1] = camera_diag_en ? stream_diag_led[1] : init_done;
+    assign led[2] = camera_diag_en ? stream_diag_led[2] : (stream_overflow_sys || stream_frame_drop_sys);
+    assign led[3] = camera_diag_en ? stream_diag_led[3] : stream_underflow;
 
 endmodule

@@ -6,12 +6,11 @@ Date: 2026-05-09
 
 The image geometry work should stay fixed for now. For the current best hardware path, use `sw[7]=1`, `sw[6]=0`, `sw[4:3]=00`, which selects full-VGA sensor output plus FPGA-side 2x2 averaging with the hardware-selected 8-source-pixel horizontal window.
 
-The next useful tuning target is not more scaling. It is sensor DSP and auto-gain behavior:
+The next useful tuning target is not more scaling. It is sensor DSP and saturation behavior:
 
 1. First test `COM16=0x18` instead of `0x38`. This keeps the denoise/AWB-gain bits used by common tables but disables the edge-enhancement auto bit, which can make dark speckles look sharper.
-2. Then test lower AGC ceiling with `COM9=0x00`. Public register references decode this as a 2x automatic gain ceiling, while the current default `0x28` has the same gain-ceiling field as the common `0x20` value, which is 8x.
-3. Then test saturation reduction, especially `SATCTR=0xA0`, `0x80`, and `0x60`. The Linux-derived table commonly uses `0x60`; our current table uses `0xF0`, which may make chroma noise and red/blue sparkle much more visible.
-4. Do not start by changing the RGB/YUV matrix or undocumented AWB registers. Those affect color cast strongly and can hide the noise problem without reducing it.
+2. Then test saturation reduction, especially `SATCTR=0xC0` and `0xA0`. The Linux-derived table commonly uses `0x60`; our current table uses `0xF0`, which may make chroma noise and red/blue sparkle much more visible.
+3. Do not start by changing the RGB/YUV matrix or undocumented AWB registers. Those affect color cast strongly and can hide the noise problem without reducing it.
 
 ## Current project baseline
 
@@ -20,13 +19,12 @@ Current relevant values in `rtl/camera/ov7670_reg_rom.v`:
 | Area | Register | Current default | Current profile override | Notes |
 | --- | --- | ---: | ---: | --- |
 | Auto controls | `COM8` `0x13` | `0xE7` final | low-noise profiles use `0xA7` | Keeps AGC/AEC/AWB enabled, but changes AEC step behavior. |
-| AGC ceiling | `COM9` `0x14` | `0x28` | low-noise profiles use `0x00` | Per register references, bits `[6:4]` set the maximum automatic gain. |
 | Exposure window | `AEW/AEB` `0x24/0x25` | `0x75/0x63` | low-noise uses `0x60/0x50`; slow diagnostic uses `0x50/0x40` | Smaller thresholds can bias exposure behavior. |
-| Denoise/edge | `COM16` `0x41` | `0x38` final | none | Enables AWB gain plus denoise auto and edge auto in common register descriptions. |
+| Denoise/edge | `COM16` `0x41` | `0x38` final | `sw7` profiles `01/10/11` use `0x18` | Enables AWB gain plus denoise auto and edge auto in common register descriptions. |
 | Edge factor | `EDGE` `0x3F` | `0x00` | none | Auto edge adjustment may still change edge behavior when `COM16[5]` is enabled. |
 | Denoise strength | `DNSTH` `0x4C` | `0x00` | low-noise profiles use `0x0C` | If `COM16` auto denoise threshold is enabled, manual writes may be overwritten internally. |
 | UV/chroma | `REG4B` `0x4B` | `0x09` | none | Bit 0 is documented in public headers as UV average enable, so current value already has that bit set. |
-| Saturation | `SATCTR` `0xC9` | `0xF0` | none | High saturation can make chroma noise obvious. |
+| Saturation | `SATCTR` `0xC9` | `0xF0` | `sw7` profiles `10/11` use `0xC0` and `0xA0` | High saturation can make chroma noise obvious. |
 | Contrast | `CONTRAS` `0x56` | `0x40` | none | Common default-like value. |
 | Black level | `B0..B3`, `B8` | `0x84`, `0x0C`, `0x0E`, `0x82`, `0x0A` | none | Relevant to dark-scene sparkle, but less documented and should be changed later. |
 
@@ -57,21 +55,7 @@ Recommended first A/B values:
 
 Best first experiment: make one new profile that changes only final `COM16` from `0x38` to `0x18`.
 
-### 2. `COM9` `0x14`: automatic gain ceiling
-
-Current default profile uses `0x28`. The documented gain ceiling is in bits `[6:4]`, so `0x20` and `0x28` both select the same 8x ceiling; the low bits are not the gain ceiling. The low-noise profile already uses `0x00`, which selects 2x.
-
-Recommended values:
-
-| Value | AGC ceiling | Expected result | Risk |
-| ---: | --- | --- | --- |
-| `0x28` | 8x ceiling, current default-like behavior | Brighter in dark scenes | More analog gain noise |
-| `0x10` | 4x ceiling | Less sparkle than default | Darker image |
-| `0x00` | 2x ceiling | Lowest gain noise | Dark or underexposed unless lighting is good |
-
-Best second experiment: compare `COM9=0x10` and `COM9=0x00` using the same `sw7` full-VGA averaging path.
-
-### 3. `SATCTR` `0xC9`: saturation and chroma noise visibility
+### 2. `SATCTR` `0xC9`: saturation and chroma noise visibility
 
 Current value is `0xF0`. Public Linux-derived tables commonly show `0x60`. This is not true denoise, but lower saturation can make red/blue sparkle on dark brown surfaces much less visible.
 
@@ -84,9 +68,9 @@ Recommended values:
 | `0x80` | Medium saturation reduction | Less vivid |
 | `0x60` | Linux-style lower saturation | May look washed out |
 
-Best third experiment: keep exposure/gain unchanged and sweep only `SATCTR`.
+Best second experiment: keep exposure/gain unchanged and sweep only `SATCTR`.
 
-### 4. `REG4B` `0x4B`: UV average
+### 3. `REG4B` `0x4B`: UV average
 
 Current value is `0x09`, and bit 0 is already set. Public register maps describe bit 0 as UV average enable. Because bits `[7:1]` are reserved or undocumented, this is not a good first tuning target.
 
@@ -99,7 +83,7 @@ Useful later test:
 | `0x09` | Current, UV average bit enabled |
 | `0x08` | Same nearby reserved-bit pattern, but UV average bit disabled |
 
-Use this only after `COM16`, `COM9`, and `SATCTR` are tested.
+Use this only after `COM16` and `SATCTR` are tested.
 
 ### 5. Color matrix and AWB registers
 
@@ -115,15 +99,14 @@ Avoid changing these until the noise floor is acceptable:
 
 ## Recommended next A/B profiles
 
-Keep the current `sw7` geometry and averaging path. Add only one or two register changes per profile so hardware observations remain meaningful.
+Implemented on 2026-05-09: keep the current `sw7` geometry and averaging path, and change only one or two register groups per profile so hardware observations remain meaningful.
 
 | Profile purpose | Changes from current `sw7=1, sw[4:3]=00` | What to look for |
 | --- | --- | --- |
 | Baseline | none | Current brightness, color, red sparkle |
 | Denoise without edge | `COM16=0x18` | Less sharp sparkle, slightly softer edges |
-| Lower gain | `COM9=0x10`, or stronger `0x00` | Less sparkle but darker image |
-| Lower saturation | `SATCTR=0xA0` or `0x80` | Less red/blue chroma noise without too much color loss |
-| Combined candidate | `COM16=0x18`, `COM9=0x10`, `SATCTR=0xA0` | Practical best-looking profile if individual tests are positive |
+| Lower saturation | `SATCTR=0xC0` or `0xA0` | Less red/blue chroma noise without too much color loss |
+| Combined candidate | `COM16=0x18`, `SATCTR=0xA0` | Practical best-looking profile if individual tests are positive |
 
 ## Hardware test checklist
 
@@ -145,11 +128,11 @@ Use the same scene and lighting for each profile:
 
 ## Recommendation
 
-For the next implementation step, add three temporary `sw7` full-VGA averaging tuning profiles:
+The temporary `sw7` full-VGA averaging tuning profiles are:
 
 - `00`: current baseline, unchanged
 - `01`: `COM16=0x18`
-- `10`: `COM16=0x18`, `COM9=0x10`
-- `11`: `COM16=0x18`, `COM9=0x10`, `SATCTR=0xA0`
+- `10`: `COM16=0x18`, `SATCTR=0xC0`
+- `11`: `COM16=0x18`, `SATCTR=0xA0`
 
-That sequence isolates the likely causes in order: edge-enhanced sparkle, analog gain noise, then chroma-noise visibility.
+That sequence isolates the likely causes in order: edge-enhanced sparkle, then chroma-noise visibility.

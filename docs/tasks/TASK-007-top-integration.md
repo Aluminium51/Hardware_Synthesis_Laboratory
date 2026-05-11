@@ -10,19 +10,21 @@ Implemented so far:
 - The synthetic framebuffer fill path has been removed as an active writer.
 - Camera capture is held in reset until `init_done` is synchronized into the `cam_pclk` domain.
 - `cam_siod` is implemented as an explicit top-level tri-state with readback to `siod_in`.
-- `cam_xclk` is generated from `clk_100` with a divide-by-4 baseline divider.
+- `cam_xclk` is generated from `clk_100` with a divide-by-4 baseline divider, and `sw[7]=1, sw[6]=1` selects a faster probe clock for the full-VGA averaging experiment.
 - OV7670 bring-up now uses the sensor's internal color-bar pattern and raw passthrough display so camera-path debug is isolated from live-scene issues and filter settings.
 - `sw[4:3]` selects the reset-sampled camera initialization profile: live auto, live low-noise, low-speed diagnostic, or color bars.
 - `sw[6]=1` with `sw[4:3]=00` selects the averaged-QVGA live-auto A/B profile.
 - `sw[7]=1` selects a full-VGA sensor-output experiment that averages 2x2 source pixels in FPGA before writing the existing 320x240 framebuffer.
-- With `sw[7]=1`, `sw[4:3]=00` uses the hardware-selected 8-source-pixel horizontal shift; `01`, `10`, and `11` remain comparison windows for edge-artifact debug.
+- With `sw[7]=1`, all `sw[4:3]` subprofiles use the hardware-selected 8-source-pixel horizontal shift, and `sw[4:3]` selects `COM16`/`SATCTR` noise tuning profiles.
+- With `sw[7]=1` and `sw[6]=1`, the top level switches `cam_xclk` from the 25 MHz baseline to a 50 MHz probe clock while leaving the framebuffer path unchanged.
 - Camera profile switches are not live mode switches; change `sw[7]`, `sw[6]`, or `sw[4:3]`, then press/release `btnC` so the SCCB init FSM reruns with the reset-sampled profile.
 - The color-bar profile writes COM17 with the internal color-bar enable bit (`8'h08`) as the final profile-specific register write.
 - The integrated capture instance writes all 320 source columns. An earlier 8-pixel left-crop debug attempt reduced the visible stripe but left the right side black when the camera supplied only 320 valid pixels per line, so the baseline was restored to no crop.
 - `sw[2]` now selects a temporary camera-path LED diagnostic view. With `sw[2]=1`, LEDs show line seen, line length >=320, line length >=321, and line length >=328.
 - The OV7670 horizontal window is shifted right by 19 source pixels in the register ROM to target the left-edge stripe without FPGA-side crop or right-edge fill.
 - The OV7670 vertical window is shifted up by two visible high-bit window steps in the register ROM to target a bright top-edge line without FPGA-side top crop.
-- The full-VGA FPGA-average profiles keep the tuned vertical window and expose horizontal window A/B variants so hardware can choose the best left/right edge compromise.
+- The full-VGA FPGA-average profiles keep the tuned vertical and horizontal windows fixed so hardware can compare `COM16` and `SATCTR` noise/color tuning without changing geometry.
+- The `sw[7]=1, sw[6]=1` setting now enables a separate full-resolution line-buffer streaming experiment using `ov7670_capture_rgb565_linefifo`, `line_buffer_bank`, and `vga_reader_linefifo`.
 - The averaged-QVGA A/B profile enables the OV7670 DCW/scaler registers as a hardware experiment for reducing live-camera noise without changing live-auto exposure, gain, or clock tuning.
 - The full-VGA averaging experiment instantiates `ov7670_capture_rgb565_2x2_avg` beside the stable capture block and muxes only the selected framebuffer write/status signals into the rest of the existing top-level path.
 - The optional clamp in `ov7670_capture_rgb565_2x2_avg` remains available for debug, but the top-level `sw[7]` A/B test leaves clamping disabled.

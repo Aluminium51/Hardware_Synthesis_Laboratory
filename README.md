@@ -347,10 +347,14 @@ the camera uses the live-auto exposure/gain/clock profile with the averaged-QVGA
 OV7670 DCW/scaler experiment enabled for an honest A/B noise comparison.
 
 `sw[7]` is sampled during reset for a separate full-sensor experiment. With
-`sw[7]=1`, the OV7670 is configured for full-VGA RGB output and the FPGA
-capture path averages each 2x2 source block into one 320x240 framebuffer pixel
-using a single 640-pixel line buffer. `sw[4:3]` selects full-VGA horizontal
-window A/B variants while `sw[7]` is high.
+`sw[7]=1`, the OV7670 is configured for full-VGA RGB output. `sw[6]=0` keeps
+the FPGA-side 2x2 averaging path that writes the existing 320x240 framebuffer.
+`sw[6]=1` switches to the new full-resolution line-buffer stream experiment,
+which uses line-ring BRAM instead of a full framebuffer. `sw[4:3]` selects the
+full-VGA noise/color register A/B variants while `sw[7]` is high. With
+`sw[7]=1` and `sw[6]=1`, the top level also switches to a faster `cam_xclk`
+probe so the same full-resolution stream can be tested at a higher camera clock
+without changing the framebuffer baseline.
 
 Change `sw[4:3]`, then press `btnC` to reinitialize the camera with the selected profile.
 
@@ -369,13 +373,14 @@ This mode is intended to debug left-edge stripe behavior without changing the di
 Current camera windowing note:
 - the OV7670 horizontal window is shifted right by 19 source pixels in the register ROM
 - the OV7670 vertical window is shifted up by two visible high-bit window steps in the register ROM
-- the `sw[7]` full-VGA averaging profiles keep the tuned vertical window; hardware testing selected the 8-source-pixel horizontal shift as the default
+- the `sw[7]` full-VGA averaging profiles keep the tuned vertical window and the hardware-selected 8-source-pixel horizontal window for every noise A/B profile
 - FPGA capture remains full-width with no left crop
 
 Current camera scaling note:
 - `sw[6]=0` keeps the stable QVGA-like scaling register set for all `sw[4:3]` profiles
 - `sw[6]=1` with `sw[4:3]=00` enables the averaged-QVGA experiment using `COM3`, `COM14`, `SCALING_DCWCTR`, and scaled PCLK settings together
-- `sw[7]=1` enables full-VGA camera output and FPGA-side 2x2 averaging before framebuffer writes; with `sw[7]=1`, `sw[4:3]` selects horizontal windows `00=8-pixel default`, `01=16-pixel comparison`, `10=8-pixel known-good duplicate`, `11=reference`
+- `sw[7]=1` enables full-VGA camera output and FPGA-side 2x2 averaging before framebuffer writes; with `sw[7]=1`, `sw[4:3]` selects noise profiles `00=baseline`, `01=COM16 0x18`, `10=COM16 0x18 + SATCTR 0xC0`, `11=COM16 0x18 + SATCTR 0xA0`
+- `sw[7]=1` and `sw[6]=1` additionally switch `cam_xclk` from the 25 MHz baseline to a 50 MHz probe clock so the same full-VGA path can be rate-tested
 - change `sw[7]`, `sw[6]`, or `sw[4:3]`, then press `btnC` so the OV7670 reloads the selected SCCB profile
 
 ### VGA-only debug pattern
@@ -539,12 +544,32 @@ TASK-006 is simulation-verified as a module-level capture block and is wired int
 
 ### `ov7670_capture_rgb565_2x2_avg.v`
 Experimental full-sensor capture path selected by `sw[7]=1`, `sw[6]=0`, and
-`sw[4:3]` horizontal A/B variants during reset. It receives a 640x480 RGB565
+`sw[4:3]` noise/color A/B variants during reset. It receives a 640x480 RGB565
 stream, keeps only one previous 640-pixel line in FPGA memory, averages each 2x2
 block, and writes the result into the existing 320x240 RGB565 framebuffer. This
 is intended as a fair A/B test against the camera's internal QVGA scaling without
 changing the BRAM framebuffer architecture. The module still supports optional
 right-edge clamping for debug, but the top-level A/B test leaves clamping off.
+
+### `ov7670_capture_rgb565_linefifo.v`
+Experimental full-resolution streaming path selected by `sw[7]=1`, `sw[6]=1`.
+It receives a 640x480 RGB565 stream, stores complete scanlines in a small BRAM
+ring, and hands committed lines to the VGA-side reader with one-line latency.
+This path is intended to probe whether the system can display full 640x480
+video without a full framebuffer.
+
+For hardware builds where BRAM utilization is the limiting factor, synthesize
+`top_basys3_ov7670_vga_stream` instead of the baseline top. The stream-only top
+does not instantiate the full framebuffer or the 2x2 averaging capture path, and
+the VGA stream reader waits for a two-line prefill before enabling camera video.
+The stream-only top keeps monitor-facing VGA timing free-running and standard;
+camera frame timing is used only for internal stream re-prime and diagnostics.
+`sw[7:6]` are sampled during reset as stream timing probes: `00` 50 MHz XCLK,
+`01` 49.5 MHz XCLK, `10` 49.0 MHz XCLK, and `11` 48.5 MHz XCLK. These
+probes change generated XCLK only; the stream-only top keeps the OV7670
+register profile fixed to the full-VGA stream baseline.
+Use `sw[2]=1` to show stream diagnostics; in that mode `sw[4:3]` select pages
+for queue status, sticky events, camera frame-rate status, and seam correction.
 
 ---
 

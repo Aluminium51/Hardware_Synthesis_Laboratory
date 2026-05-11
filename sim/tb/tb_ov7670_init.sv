@@ -501,6 +501,29 @@ module tb_ov7670_init;
         end
     endtask
 
+    task automatic run_noise_tuning_profile_case(
+        input [3:0] profile_value,
+        input [7:0] expected_satctr,
+        input [7:0] expected_com16,
+        input string label
+    );
+        begin
+            $display("INFO: checking OV7670 noise tuning profile %s", label);
+            load_expected(profile_value);
+
+            check_signal(expected_addr[125] === 8'hC9,
+                         $sformatf("%s entry 125 should be SATCTR", label));
+            check_signal(expected_data[125] === expected_satctr,
+                         $sformatf("%s SATCTR expected 0x%02h got 0x%02h",
+                                   label, expected_satctr, expected_data[125]));
+            check_signal(expected_addr[126] === 8'h41,
+                         $sformatf("%s entry 126 should be COM16", label));
+            check_signal(expected_data[126] === expected_com16,
+                         $sformatf("%s COM16 expected 0x%02h got 0x%02h",
+                                   label, expected_com16, expected_data[126]));
+        end
+    endtask
+
     initial begin
         $dumpfile("sim/run/tb_ov7670_init.vcd");
         $dumpvars(0, tb_ov7670_init);
@@ -521,13 +544,21 @@ module tb_ov7670_init;
         run_profile_case(4'b0100, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
                          "live auto averaged QVGA");
         run_profile_case(4'b1000, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
-                         "live auto full-VGA FPGA average default shift 8");
+                         "full-VGA average baseline noise profile");
         run_profile_case(4'b1001, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
-                         "live auto full-VGA FPGA average shift 16");
+                         "full-VGA average COM16 edge-auto disabled");
         run_profile_case(4'b1010, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
-                         "live auto full-VGA FPGA average shift 8");
+                         "full-VGA average lower saturation");
         run_profile_case(4'b1011, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
-                         "live auto full-VGA FPGA average reference");
+                         "full-VGA average stronger saturation reduction");
+        run_profile_case(4'b1100, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
+                         "stream full-VGA alias baseline");
+        run_profile_case(4'b1101, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
+                         "stream full-VGA alias COM16 edge-auto disabled");
+        run_profile_case(4'b1110, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
+                         "stream full-VGA alias lower saturation");
+        run_profile_case(4'b1111, 8'hE7, 8'h28, 8'h75, 8'h63, 8'h00, 8'h80, 8'h00,
+                         "stream full-VGA alias stronger saturation reduction");
         run_scaling_profile_case(4'b0000, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
                                  "live auto");
         run_scaling_profile_case(4'b0001, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
@@ -539,18 +570,34 @@ module tb_ov7670_init;
         run_scaling_profile_case(4'b0011, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
                                  "color bars");
         run_scaling_profile_case(4'b1000, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
-                                 "full-VGA FPGA average");
+                                 "full-VGA FPGA average baseline");
         run_scaling_profile_case(4'b1001, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
-                                 "full-VGA FPGA average shift 16");
+                                 "full-VGA FPGA average COM16 edge-auto disabled");
         run_scaling_profile_case(4'b1010, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
-                                 "full-VGA FPGA average shift 8");
+                                 "full-VGA FPGA average lower saturation");
         run_scaling_profile_case(4'b1011, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
-                                 "full-VGA FPGA average reference");
+                                 "full-VGA FPGA average stronger saturation reduction");
+        run_scaling_profile_case(4'b1100, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
+                                 "stream full-VGA alias baseline");
+        run_scaling_profile_case(4'b1101, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
+                                 "stream full-VGA alias COM16 edge-auto disabled");
+        run_scaling_profile_case(4'b1110, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
+                                 "stream full-VGA alias lower saturation");
+        run_scaling_profile_case(4'b1111, 8'h00, 8'h00, 8'h00, 8'h00, 8'h11, 8'h00, 8'h02,
+                                 "stream full-VGA alias stronger saturation reduction");
         run_window_shift_case();
         run_full_vga_profile_case(4'b1000, 8'hB6, 8'h14, 8'h02, "default 8-pixel shift");
-        run_full_vga_profile_case(4'b1001, 8'hB6, 8'h15, 8'h03, "16-pixel shift");
-        run_full_vga_profile_case(4'b1010, 8'hB6, 8'h14, 8'h02, "8-pixel shift");
-        run_full_vga_profile_case(4'b1011, 8'hB6, 8'h13, 8'h01, "reference window");
+        run_full_vga_profile_case(4'b1001, 8'hB6, 8'h14, 8'h02, "COM16 edge-auto disabled");
+        run_full_vga_profile_case(4'b1010, 8'hB6, 8'h14, 8'h02, "lower saturation");
+        run_full_vga_profile_case(4'b1011, 8'hB6, 8'h14, 8'h02, "stronger saturation reduction");
+        run_full_vga_profile_case(4'b1100, 8'hB6, 8'h14, 8'h02, "stream full-VGA alias baseline");
+        run_full_vga_profile_case(4'b1101, 8'hB6, 8'h14, 8'h02, "stream full-VGA alias COM16 edge-auto disabled");
+        run_full_vga_profile_case(4'b1110, 8'hB6, 8'h14, 8'h02, "stream full-VGA alias lower saturation");
+        run_full_vga_profile_case(4'b1111, 8'hB6, 8'h14, 8'h02, "stream full-VGA alias stronger saturation reduction");
+        run_noise_tuning_profile_case(4'b1000, 8'hF0, 8'h38, "baseline");
+        run_noise_tuning_profile_case(4'b1001, 8'hF0, 8'h18, "COM16 edge-auto disabled");
+        run_noise_tuning_profile_case(4'b1010, 8'hC0, 8'h18, "lower saturation");
+        run_noise_tuning_profile_case(4'b1011, 8'hA0, 8'h18, "stronger saturation reduction");
         run_rom_boundary_case();
         run_success_case();
         run_failure_case();

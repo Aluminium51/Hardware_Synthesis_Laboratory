@@ -169,6 +169,7 @@ Status:
 - Updated on 2026-05-09 to apply the tuned horizontal and vertical camera window shifts to the `sw[7]` full-VGA averaging profile after hardware showed the raw edge artifacts returned in that mode.
 - Updated on 2026-05-09 to clamp the last 10 `sw[7]` averaged destination columns to the nearest valid averaged pixel after hardware showed a right-edge averaging artifact from the shifted full-VGA window.
 - Updated on 2026-05-09 to replace the top-level `sw[7]` clamp with reset-sampled horizontal window A/B variants on `sw[4:3]`; hardware testing showed the 8-source-pixel shift removed both edge artifacts, so `00` now defaults to that window.
+- Updated on 2026-05-09 to repurpose the `sw[7]` full-VGA averaging subprofiles into saturation/noise A/B profiles while keeping the hardware-selected 8-source-pixel horizontal window fixed.
 - Vivado synthesis, bitstream generation, and hardware validation passed for the completed baseline.
 - Live OV7670 video displays through the framebuffer, and raw / grayscale / negative / threshold modes switch in real time on the VGA readout path.
 
@@ -209,6 +210,8 @@ Only after baseline is complete:
 - Sobel edge detection
 - double buffering
 - full-resolution or upscaling experiments
+- camera XCLK / frame-rate probe on the existing full-VGA averaging path
+- full-resolution line-buffer streaming display
 - extra-credit exploration
 
 ## Stop rules

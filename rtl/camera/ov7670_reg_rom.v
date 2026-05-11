@@ -12,10 +12,11 @@
 // - 0010: live low-noise, lower-speed diagnostic
 // - 0011: internal color bars for camera-path debug
 // - 0100: live auto plus averaged-QVGA scaler/DCW experiment
-// - 1000: full-VGA sensor output plus FPGA 2x2 average, 8-pixel horizontal shift
-// - 1001: full-VGA sensor output plus FPGA 2x2 average, 16-pixel horizontal shift
-// - 1010: full-VGA sensor output plus FPGA 2x2 average, 8-pixel horizontal shift
-// - 1011: full-VGA sensor output plus FPGA 2x2 average, reference horizontal window
+// - 1000: full-VGA sensor output plus FPGA 2x2 average, baseline noise profile
+// - 1001: full-VGA sensor output plus FPGA 2x2 average, COM16 edge-auto disabled
+// - 1010: full-VGA sensor output plus FPGA 2x2 average, COM16 edge-auto disabled with lower saturation
+// - 1011: full-VGA sensor output plus FPGA 2x2 average, COM16 edge-auto disabled with stronger saturation reduction
+// - 1100..1111: full-VGA stream/noise profile aliases; stream-only timing is selected in the top level
 //
 // Register comments use common OV7670 names where they are known. Entries
 // marked as reference tuning or reserved are kept from the hardware-tested
@@ -168,8 +169,8 @@ module ov7670_reg_rom (
                 8'd122: rom_entry = {1'b0, 8'h4C, 8'h00}; // DNSTH: denoise threshold; profile override later.
                 8'd123: rom_entry = {1'b0, 8'h77, 8'h01}; // Reference/reserved DSP tuning.
                 8'd124: rom_entry = {1'b0, 8'h4B, 8'h09}; // REG4B: reference DSP/color tuning. // increase UV filter from 09 to 0E
-                8'd125: rom_entry = {1'b0, 8'hC9, 8'hF0}; // SATCTR: saturation control.
-                8'd126: rom_entry = {1'b0, 8'h41, 8'h38}; // COM16: final denoise/edge/AWB gain option mix.
+                8'd125: rom_entry = {1'b0, 8'hC9, profile_satctr(profile)}; // SATCTR: profile saturation/noise visibility tuning.
+                8'd126: rom_entry = {1'b0, 8'h41, profile_com16(profile)}; // COM16: profile denoise/edge/AWB gain option mix.
                 8'd127: rom_entry = {1'b0, 8'h56, 8'h40}; // CONTRAS: contrast control.
 
                 // Additional gain and edge tuning.
@@ -250,7 +251,7 @@ module ov7670_reg_rom (
                     2'b00,
                     2'b01,
                     2'b10,
-                    2'b11: profile_href = 8'hB6; // Full-VGA averaged A/B: 8, 16, 8, or reference shift.
+                    2'b11: profile_href = 8'hB6; // Full-VGA averaged noise A/B: fixed 8-pixel horizontal window.
                 endcase
             end else begin
                 profile_href = 8'h89; // Tuned QVGA window shift for left-edge stripe.
@@ -263,10 +264,10 @@ module ov7670_reg_rom (
         begin
             if (profile_value[3]) begin
                 case (profile_value[1:0])
-                    2'b00: profile_hstart = 8'h14; // Full-VGA averaged default: 8-pixel horizontal shift.
-                    2'b01: profile_hstart = 8'h15; // Full-VGA averaged A/B: 16-pixel horizontal shift.
-                    2'b10: profile_hstart = 8'h14; // Full-VGA averaged A/B: 8-pixel horizontal shift.
-                    2'b11: profile_hstart = 8'h13; // Full-VGA averaged A/B: reference horizontal window.
+                    2'b00,
+                    2'b01,
+                    2'b10,
+                    2'b11: profile_hstart = 8'h14; // Full-VGA averaged noise A/B: fixed 8-pixel horizontal window.
                 endcase
             end else begin
                 profile_hstart = 8'h16; // Tuned QVGA horizontal start.
@@ -279,10 +280,10 @@ module ov7670_reg_rom (
         begin
             if (profile_value[3]) begin
                 case (profile_value[1:0])
-                    2'b00: profile_hstop = 8'h02; // Full-VGA averaged default: 8-pixel horizontal shift.
-                    2'b01: profile_hstop = 8'h03; // Full-VGA averaged A/B: 16-pixel horizontal shift.
-                    2'b10: profile_hstop = 8'h02; // Full-VGA averaged A/B: 8-pixel horizontal shift.
-                    2'b11: profile_hstop = 8'h01; // Full-VGA averaged A/B: reference horizontal window.
+                    2'b00,
+                    2'b01,
+                    2'b10,
+                    2'b11: profile_hstop = 8'h02; // Full-VGA averaged noise A/B: fixed 8-pixel horizontal window.
                 endcase
             end else begin
                 profile_hstop = 8'h04; // Tuned QVGA horizontal stop.
@@ -399,6 +400,34 @@ module ov7670_reg_rom (
                 4'b0001: profile_com9 = 8'h00; // Drop from 4x to 2x max gain
                 4'b0010: profile_com9 = 8'h00; // 2x max AGC for slower diagnostic mode.
                 default: profile_com9 = 8'h28;
+            endcase
+        end
+    endfunction
+
+    function [7:0] profile_satctr;
+        input [3:0] profile_value;
+        begin
+            case (profile_value)
+                4'b1010,
+                4'b1110: profile_satctr = 8'hC0; // Full-VGA noise A/B: mild saturation reduction.
+                4'b1011,
+                4'b1111: profile_satctr = 8'hA0; // Full-VGA noise A/B: stronger chroma-noise reduction.
+                default: profile_satctr = 8'hF0;
+            endcase
+        end
+    endfunction
+
+    function [7:0] profile_com16;
+        input [3:0] profile_value;
+        begin
+            case (profile_value)
+                4'b1001,
+                4'b1010,
+                4'b1011,
+                4'b1101,
+                4'b1110,
+                4'b1111: profile_com16 = 8'h18; // Denoise/AWB gain on; edge auto disabled.
+                default: profile_com16 = 8'h38;
             endcase
         end
     endfunction
