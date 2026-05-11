@@ -11,7 +11,7 @@ module top_basys3_ov7670_vga (
     input  wire        btnC,
     input  wire        btnU,
     input  wire        btnD,
-    input  wire [7:0]  sw,
+    input  wire [14:0] sw,
     output wire        Hsync,
     output wire        Vsync,
     output wire [3:0]  vgaRed,
@@ -39,11 +39,11 @@ module top_basys3_ov7670_vga (
 
     wire rst_vga = rst_sys;
 
-    wire [7:0] sw_sync;
+    wire [14:0] sw_sync;
 
     genvar sw_i;
     generate
-        for (sw_i = 0; sw_i < 8; sw_i = sw_i + 1) begin : gen_sw_sync
+        for (sw_i = 0; sw_i < 15; sw_i = sw_i + 1) begin : gen_sw_sync
             sync_2ff u_sync_sw (
                 .clk     (clk_100),
                 .rst     (rst_sys),
@@ -53,6 +53,7 @@ module top_basys3_ov7670_vga (
         end
     endgenerate
 
+    wire       face_detect_en = sw_sync[14];
     wire       debug_pattern_en = sw_sync[5];
     wire       camera_diag_en = sw_sync[2];
     wire [1:0] filter_mode = sw_sync[1:0];
@@ -332,6 +333,149 @@ module top_basys3_ov7670_vga (
     assign capture_dbg_line_ge_width = full_avg_capture_en ? avg_capture_dbg_line_ge_width : stable_capture_dbg_line_ge_width;
     assign capture_dbg_line_ge_width_plus_1 = full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_1 : stable_capture_dbg_line_ge_width_plus_1;
     assign capture_dbg_line_ge_width_plus_extra = full_avg_capture_en ? avg_capture_dbg_line_ge_width_plus_extra : stable_capture_dbg_line_ge_width_plus_extra;
+
+    // Optional face-detect preprocessing stream in camera pixel domain.
+    // Approximate Y ~= (R + 2*G + B) / 4 using shifts only.
+    wire [7:0] cap_r8 = {capture_wr_data[15:11], capture_wr_data[15:13]};
+    wire [7:0] cap_g8 = {capture_wr_data[10:5],  capture_wr_data[10:9]};
+    wire [7:0] cap_b8 = {capture_wr_data[4:0],   capture_wr_data[4:2]};
+    wire [9:0] cap_gray_acc = {2'b00, cap_r8} + {1'b0, cap_g8, 1'b0} + {2'b00, cap_b8};
+    wire [7:0] capture_gray = cap_gray_acc[9:2];
+
+    reg [8:0] fd_col_cam = 9'd0;
+    reg [7:0] fd_row_cam = 8'd0;
+    reg       capture_wr_en_d = 1'b0;
+
+    wire fd_frame_start = capture_wr_en && !capture_wr_en_d && (capture_wr_addr == 17'd0);
+    wire fd_line_start  = capture_wr_en && (fd_col_cam == 9'd0);
+
+    always @(posedge cam_pclk) begin
+        if (capture_rst) begin
+            capture_wr_en_d <= 1'b0;
+            fd_col_cam <= 9'd0;
+            fd_row_cam <= 8'd0;
+        end else begin
+            capture_wr_en_d <= capture_wr_en;
+
+            if (capture_wr_en) begin
+                if (fd_col_cam == 9'd319) begin
+                    fd_col_cam <= 9'd0;
+                    if (fd_row_cam == 8'd239)
+                        fd_row_cam <= 8'd0;
+                    else
+                        fd_row_cam <= fd_row_cam + 8'd1;
+                end else begin
+                    fd_col_cam <= fd_col_cam + 9'd1;
+                end
+            end
+
+            if (fd_frame_start) begin
+                fd_col_cam <= 9'd0;
+                fd_row_cam <= 8'd0;
+            end
+        end
+    end
+
+    wire        fd_window_valid;
+    wire [9:0]  fd_window_x;
+    wire [8:0]  fd_window_y;
+    wire [24*24*8-1:0] fd_window_data;
+
+    wire        fd_busy;
+    wire        fd_done;
+    wire        fd_face_found;
+    reg         fd_start;
+
+    wire [31:0] fd_rom_addr;
+    wire        fd_rom_ren;
+    wire [31:0] fd_rom_data;
+    wire [31:0] fd_ii_addr;
+    wire        fd_ii_ren;
+    wire [31:0] fd_ii_data;
+    wire        fd_ii_valid;
+    wire        face_detect_en_cam;
+    wire [31:0] fd_ii_data_int;
+    wire        fd_ii_valid_int;
+
+    sync_2ff u_sync_face_detect_en_cam (
+        .clk     (cam_pclk),
+        .rst     (capture_rst),
+        .d_async (face_detect_en),
+        .q_sync  (face_detect_en_cam)
+    );
+
+    // Stub cascade ROM tie for top-level integration scaffolding.
+    // Replace with BRAM-backed cascade ROM when enabling face detection.
+    assign fd_rom_data = 32'd0;
+
+    integral_image_ram #(
+        .IMAGE_WIDTH  (320),
+        .IMAGE_HEIGHT (240),
+        .DATA_WIDTH   (32),
+        .ADDR_WIDTH   (17)
+    ) u_integral_image_ram (
+        .clk        (cam_pclk),
+        .rst        (capture_rst || !face_detect_en_cam),
+        .wr_en      (capture_wr_en && face_detect_en_cam),
+        .wr_addr    (capture_wr_addr),
+        .wr_px      (capture_gray),
+        .line_start (fd_line_start),
+        .frame_start(fd_frame_start),
+        .rd_en      (fd_ii_ren),
+        .rd_addr    (fd_ii_addr),
+        .rd_data    (fd_ii_data_int),
+        .rd_valid   (fd_ii_valid_int)
+    );
+
+    sliding_window_24 #(
+        .IMAGE_WIDTH (320),
+        .DATA_WIDTH  (8),
+        .WINDOW      (24)
+    ) u_sliding_window_24 (
+        .clk         (cam_pclk),
+        .rst         (capture_rst || !face_detect_en_cam),
+        .px_valid    (capture_wr_en && face_detect_en_cam),
+        .line_start  (fd_line_start),
+        .frame_start (fd_frame_start),
+        .px_in       (capture_gray),
+        .window_valid(fd_window_valid),
+        .window_x    (fd_window_x),
+        .window_y    (fd_window_y),
+        .window_data (fd_window_data)
+    );
+
+    always @(posedge cam_pclk) begin
+        if (capture_rst || !face_detect_en_cam) begin
+            fd_start <= 1'b0;
+        end else begin
+            // Simple scheduler: evaluate next window when FSM is idle.
+            fd_start <= fd_window_valid && !fd_busy;
+        end
+    end
+
+    face_detect #(
+        .IMG_WIDTH   (320),
+        .SCALE_SHIFT (8)
+    ) u_face_detect (
+        .clk        (cam_pclk),
+        .rst        (capture_rst || !face_detect_en_cam),
+        .start      (fd_start),
+        .win_x      (fd_window_x),
+        .win_y      (fd_window_y),
+        .rom_addr   (fd_rom_addr),
+        .rom_ren    (fd_rom_ren),
+        .rom_data   (fd_rom_data),
+        .ii_addr    (fd_ii_addr),
+        .ii_ren     (fd_ii_ren),
+        .ii_data    (fd_ii_data_int),
+        .ii_valid   (fd_ii_valid_int),
+        .busy       (fd_busy),
+        .done       (fd_done),
+        .face_found (fd_face_found)
+    );
+
+    assign fd_ii_data  = fd_ii_data_int;
+    assign fd_ii_valid = fd_ii_valid_int;
 
     wire [16:0] fb_rd_addr;
     wire [15:0] fb_rd_data;

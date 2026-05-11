@@ -30,6 +30,25 @@ Notes:
 
 ## Current entries
 
+### [2026-05-11]
+Tool: ChatGPT Codex
+Used for:
+- added a robust OpenCV Haar XML to Vivado `.coe` conversion flow with fixed-point quantization
+- added a synthesizable fixed-point Haar stage-evaluation FSM module (`face_detect.v`) with ROM and integral-image interfaces
+- added streaming line-buffer / 24x24 sliding-window RTL support for grayscale camera data
+- added integration documentation for ROM layout, fixed-point contract, and face-detect datapath wiring
+Files affected:
+- `scripts/vivado/haarcascade_to_coe.py`
+- `rtl/top/face_detect.v`
+- `rtl/util/linebuffer_ram.v`
+- `rtl/util/sliding_window_24.v`
+- `docs/face_detect_haar_coe_and_pipeline.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- code reviewed for synthesizability constraints (integer-only arithmetic, no division)
+Notes:
+- this is a baseline architecture; top-level scheduling and throughput tuning may be refined after module-level simulation and hardware profiling
+
 ### [2026-04-12]
 Tool: ChatGPT
 Used for:

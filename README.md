@@ -460,12 +460,6 @@ Unsafe clock-domain crossing can cause:
 - the framebuffer is the main bridge between them
 - status/control crossings must be synchronized intentionally
 
----
-
-# 6. Major RTL modules
-
-This section describes the baseline module plan and what each file is responsible for.
-
 ## Top-level integration
 ### `top_basys3_ov7670_vga.v`
 Instantiates all submodules and connects:
@@ -473,7 +467,6 @@ Instantiates all submodules and connects:
 - switches/LEDs
 - camera pins
 - VGA pins
-- clocking IP
 - framebuffer
 - filter select logic
 
@@ -481,35 +474,26 @@ Instantiates all submodules and connects:
 ### `reset_sync.v`
 Creates clean reset signals for each clock domain.
 
-### Clock wizard IP
 Generates clocks such as:
 - VGA pixel clock
 - camera `XCLK`
 
-## VGA path
 ### `vga_timing_640x480.v`
 Generates:
 - horizontal counter
 - vertical counter
 - `HSYNC`
-- `VSYNC`
 - active display region
 
-### `vga_reader_320x240.v`
 Maps 640x480 display coordinates to 320x240 framebuffer addresses and handles read-side alignment.
 
-### `test_pattern.v`
 Used in the earliest bring-up stage before the camera path exists.
 
 ## Memory
 ### `framebuffer_bram.v`
-Dual-port BRAM wrapper.
 - port A for camera writes
 - port B for VGA reads
 
-## Filters
-### `video_filter_basic.v`
-Implements:
 - raw pass-through
 - grayscale
 - negative
@@ -644,6 +628,29 @@ The project rubric explicitly expects module-level testbenches and simulation wa
 - `tb_ov7670_sccb_master.sv`
 - `tb_ov7670_init.sv`
 - `tb_ov7670_capture.sv`
+- `tb_linebuffer_ram.sv`
+- `tb_sliding_window_24.sv`
+- `tb_face_detect.sv`
+
+## Quick simulation runner commands
+
+Run all newly added detector-path module testbenches:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/sim/run_tb.ps1
+```
+
+```bash
+bash scripts/sim/run_tb.sh
+```
+
+If Icarus is not on PATH, override paths explicitly:
+
+```powershell
+$env:IVERILOG_BIN="C:\iverilog\bin\iverilog.exe"
+$env:VVP_BIN="C:\iverilog\bin\vvp.exe"
+powershell -ExecutionPolicy Bypass -File scripts/sim/run_tb.ps1
+```
 
 ## What each testbench should prove
 
