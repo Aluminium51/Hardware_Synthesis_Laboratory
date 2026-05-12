@@ -7,7 +7,7 @@
 module integral_image_ram #(
     parameter integer IMAGE_WIDTH  = 320,
     parameter integer IMAGE_HEIGHT = 240,
-    parameter integer DATA_WIDTH   = 32,
+    parameter integer DATA_WIDTH   = 18,
     parameter integer ADDR_WIDTH   = 17,
     parameter integer FRAME_PIXELS = IMAGE_WIDTH * IMAGE_HEIGHT
 ) (

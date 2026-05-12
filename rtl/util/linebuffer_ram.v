@@ -15,7 +15,7 @@ module linebuffer_ram #(
     // address width
     localparam AW = $clog2(DEPTH);
 
-    reg [DATA_WIDTH-1:0] mem [0:DEPTH-1];
+    (* ram_style = "distributed" *) reg [DATA_WIDTH-1:0] mem [0:DEPTH-1];
     reg [AW-1:0] ptr;
     reg [AW:0] count;
 

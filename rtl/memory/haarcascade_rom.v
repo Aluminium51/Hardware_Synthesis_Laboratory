@@ -6,7 +6,7 @@
 // Notes: synchronous read with 1-cycle latency when ren is asserted.
 module haarcascade_rom #(
     parameter integer ROM_WORDS = 24471,
-    parameter MEM_FILE = "rtl/memory/haarcascade_frontalface_q8.mem"
+    parameter MEM_FILE = "haarcascade_frontalface_q8.mem"
 ) (
     input  wire        clk,
     input  wire        ren,

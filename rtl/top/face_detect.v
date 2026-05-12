@@ -25,7 +25,7 @@ module face_detect #(
     // Integral-image memory
     output reg  [31:0] ii_addr,
     output reg         ii_ren,
-    input  wire [31:0] ii_data,
+    input  wire [17:0] ii_data,
     input  wire        ii_valid,
 
     output reg         busy,
@@ -82,10 +82,10 @@ reg [31:0] addr_b;
 reg [31:0] addr_c;
 reg [31:0] addr_d;
 
-reg [31:0] ii_a;
-reg [31:0] ii_b;
-reg [31:0] ii_c;
-reg [31:0] ii_d;
+reg [17:0] ii_a;
+reg [17:0] ii_b;
+reg [17:0] ii_c;
+reg [17:0] ii_d;
 
 reg signed [63:0] stage_acc_q;
 reg signed [63:0] weak_sum_q;
@@ -96,7 +96,7 @@ function [31:0] ii_addr_of;
     input [10:0] x;
     input [9:0]  y;
     begin
-        ii_addr_of = y * IMG_WIDTH + x;
+        ii_addr_of = y * (IMG_WIDTH + 1) + x;
     end
 endfunction
 

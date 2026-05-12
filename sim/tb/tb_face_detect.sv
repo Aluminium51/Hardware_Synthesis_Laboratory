@@ -14,7 +14,7 @@ module tb_face_detect;
 
     wire [31:0] ii_addr;
     wire        ii_ren;
-    reg  [31:0] ii_data;
+    reg  [17:0] ii_data;
     reg         ii_valid;
 
     wire busy;
@@ -22,7 +22,7 @@ module tb_face_detect;
     wire face_found;
 
     reg [31:0] rom_mem [0:63];
-    reg [31:0] ii_mem [0:4095];
+    reg [17:0] ii_mem [0:4095];
     reg [31:0] ii_req_addr;
     reg         ii_pending;
 
@@ -61,7 +61,7 @@ module tb_face_detect;
             ii_req_addr <= 32'd0;
             ii_pending  <= 1'b0;
             ii_valid    <= 1'b0;
-            ii_data     <= 32'd0;
+            ii_data     <= 18'd0;
         end else begin
             ii_valid <= ii_pending;
             if (ii_pending) begin
@@ -109,13 +109,13 @@ module tb_face_detect;
         begin
             for (i = 0; i < 4096; i++) ii_mem[i] = 32'd0;
 
-            // For win=(0,0), rect=(0,0,2,2):
-            // A=ii(0,0)=10, B=ii(2,0)=12, C=ii(0,2)=12, D=ii(2,2)=30
-            // sum = 10+30-12-12 = 16
-            ii_mem[0] = 32'd10;
-            ii_mem[2] = 32'd12;
-            ii_mem[640] = 32'd12; // 2*320
-            ii_mem[642] = 32'd30;
+            // For win=(0,0), rect=(0,0,2,2) with padded integral image:
+            // A=ii(0,0)=0, B=ii(2,0)=0, C=ii(0,2)=0, D=ii(2,2)=16
+            // sum = 0+16-0-0 = 16
+            ii_mem[0] = 18'd0;
+            ii_mem[2] = 18'd0;
+            ii_mem[642] = 18'd0; // 2*321
+            ii_mem[644] = 18'd16;
         end
     endtask
 

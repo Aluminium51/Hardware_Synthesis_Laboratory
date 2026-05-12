@@ -69,6 +69,9 @@ The FSM expects a deterministic sequential ROM walk in the exact format above.
 - `ii_data`: returned integral-image value
 - `ii_valid`: data valid handshake
 
+Integral image storage uses a 1-pixel zero border (size is `(width+1) x (height+1)`),
+so rectangle sums use the standard padded integral formulation.
+
 Rectangle sum operation is:
 - `Sum = A + D - B - C`
 

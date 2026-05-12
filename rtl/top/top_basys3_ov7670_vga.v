@@ -26,7 +26,11 @@ module top_basys3_ov7670_vga (
     inout  wire        cam_siod,
     output wire        cam_pwdn,
     output wire        cam_reset,
-    output wire [3:0]  led
+    output wire [3:0]  led,
+    output wire        led11,
+    output wire        led12,
+    output wire        led13,
+    output wire        led14
 );
 
     wire rst_sys;
@@ -54,6 +58,7 @@ module top_basys3_ov7670_vga (
     endgenerate
 
     wire       face_detect_en = sw_sync[14];
+    wire [1:0] face_stride_sel = sw_sync[12:11];
     wire       debug_pattern_en = sw_sync[5];
     wire       camera_diag_en = sw_sync[2];
     wire [1:0] filter_mode = sw_sync[1:0];
@@ -394,10 +399,10 @@ module top_basys3_ov7670_vga (
     wire [31:0] fd_rom_data;
     wire [31:0] fd_ii_addr;
     wire        fd_ii_ren;
-    wire [31:0] fd_ii_data;
+    wire [17:0] fd_ii_data;
     wire        fd_ii_valid;
     wire        face_detect_en_cam;
-    wire [31:0] fd_ii_data_int;
+    wire [17:0] fd_ii_data_int;
     wire        fd_ii_valid_int;
 
     sync_2ff u_sync_face_detect_en_cam (
@@ -407,9 +412,16 @@ module top_basys3_ov7670_vga (
         .q_sync  (face_detect_en_cam)
     );
 
+    localparam integer II_WIDTH = 321;
+    localparam integer II_HEIGHT = 241;
+
+    wire [8:0]  ii_wr_row = {1'b0, fd_row_cam} + 9'd1;
+    wire [9:0]  ii_wr_col = {1'b0, fd_col_cam} + 10'd1;
+    wire [16:0] ii_wr_addr = (ii_wr_row * II_WIDTH) + ii_wr_col;
+
     haarcascade_rom #(
         .ROM_WORDS (24471),
-        .MEM_FILE  ("rtl/memory/haarcascade_frontalface_q8.mem")
+        .MEM_FILE  ("haarcascade_frontalface_q8.mem")
     ) u_haarcascade_rom (
         .clk  (cam_pclk),
         .ren  (fd_rom_ren),
@@ -418,15 +430,15 @@ module top_basys3_ov7670_vga (
     );
 
     integral_image_ram #(
-        .IMAGE_WIDTH  (320),
-        .IMAGE_HEIGHT (240),
-        .DATA_WIDTH   (32),
+        .IMAGE_WIDTH  (II_WIDTH),
+        .IMAGE_HEIGHT (II_HEIGHT),
+        .DATA_WIDTH   (18),
         .ADDR_WIDTH   (17)
     ) u_integral_image_ram (
         .clk        (cam_pclk),
         .rst        (capture_rst || !face_detect_en_cam),
         .wr_en      (capture_wr_en && face_detect_en_cam),
-        .wr_addr    (capture_wr_addr),
+        .wr_addr    (ii_wr_addr),
         .wr_px      (capture_gray),
         .line_start (fd_line_start),
         .frame_start(fd_frame_start),
@@ -453,7 +465,12 @@ module top_basys3_ov7670_vga (
         .window_data (fd_window_data)
     );
 
-    wire fd_start_next = fd_window_valid && !fd_busy;
+    wire fd_stride_ok = (face_stride_sel == 2'b00) ? 1'b1 :
+                        (face_stride_sel == 2'b01) ? ((fd_window_x[1:0] == 2'b00) && (fd_window_y[1:0] == 2'b00)) :
+                        (face_stride_sel == 2'b10) ? ((fd_window_x[2:0] == 3'b000) && (fd_window_y[2:0] == 3'b000)) :
+                                                     ((fd_window_x[3:0] == 4'b0000) && (fd_window_y[3:0] == 4'b0000));
+
+    wire fd_start_next = fd_window_valid && !fd_busy && fd_stride_ok;
 
     always @(posedge cam_pclk) begin
         if (capture_rst || !face_detect_en_cam) begin
@@ -557,6 +574,16 @@ module top_basys3_ov7670_vga (
         .d_async (fd_face_found_hold),
         .q_sync  (fd_face_found_sys)
     );
+
+    reg face_found_latched_sys = 1'b0;
+
+    always @(posedge clk_100) begin
+        if (rst_sys || !face_detect_en) begin
+            face_found_latched_sys <= 1'b0;
+        end else if (fd_face_found_sys) begin
+            face_found_latched_sys <= 1'b1;
+        end
+    end
 
     sync_2ff u_sync_fd_window_x_sys_0 (
         .clk     (clk_100),
@@ -838,5 +865,9 @@ module top_basys3_ov7670_vga (
     assign led[2] = camera_diag_en ? dbg_line_ge_width_plus_1_sys : init_error;
     assign led[3] = camera_diag_en ? dbg_line_ge_width_plus_extra_sys :
                                      (frame_activity_hold != 24'd0);
+    assign led11 = face_stride_sel[0];
+    assign led12 = face_stride_sel[1];
+    assign led13 = face_found_latched_sys;
+    assign led14 = face_detect_en;
 
 endmodule
