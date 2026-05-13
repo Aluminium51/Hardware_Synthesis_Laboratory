@@ -1,10 +1,23 @@
 `timescale 1ns/1ps
 
 // video_filter_basic
-// Purpose: select one RGB565 display filter for VGA readout pixels.
-// Clock domain: purely combinational logic on the VGA readout path.
-// Inputs: RGB565 pixel, 2-bit mode, and 4-bit threshold.
-// Assumption: blanking is controlled outside this module.
+//
+// Purpose:
+//   Select one baseline RGB565 display filter for VGA readout pixels.
+//
+// Clock domain:
+//   Combinational logic on the VGA readout path.
+//
+// Inputs:
+//   rgb565_in - current readout pixel
+//   mode      - 00 raw, 01 grayscale, 10 negative, 11 threshold
+//   threshold - 4-bit threshold expanded to the filter luminance domain
+//
+// Outputs:
+//   rgb565_out - filtered RGB565 pixel
+//
+// Assumption:
+//   Blanking and sync alignment are handled by the caller.
 module video_filter_basic (
     input  wire [15:0] rgb565_in,
     input  wire [1:0]  mode,
@@ -29,6 +42,8 @@ module video_filter_basic (
     wire [5:0] gray6 = gray_sum[7:2];
     wire [5:0] threshold6 = {threshold, threshold[3:2]};
 
+    // Mode-select mux for the readout-path filters. Raw/default mode preserves
+    // the framebuffer pixel exactly; filters never write back into memory.
     always @(*) begin
         case (mode)
             MODE_GRAYSCALE: begin

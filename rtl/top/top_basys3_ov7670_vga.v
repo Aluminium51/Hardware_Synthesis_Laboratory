@@ -1,11 +1,26 @@
 `timescale 1ns/1ps
 
 // top_basys3_ov7670_vga
-// Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
-// Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
-// Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
-// Inputs: slide switches select VGA test-pattern/filter/profile mode; buttons adjust threshold.
-// Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
+//
+// Purpose:
+//   Integrate OV7670 initialization/capture, a single RGB565 framebuffer, VGA
+//   readout, and baseline readout-path filters for the Basys 3 board.
+//
+// Clock domains:
+//   clk_100  - system control, SCCB, VGA timing/readout, and LEDs
+//   cam_pclk - OV7670 pixel capture and framebuffer writes
+//
+// Inputs:
+//   btnC      - board reset
+//   btnU/btnD - threshold increment/decrement buttons
+//   sw        - filter, debug, bilinear, and reset-sampled profile controls
+//   cam_*     - OV7670 pixel stream and SCCB readback
+//
+// Outputs:
+//   VGA sync/RGB, OV7670 control/SCCB pins, and four debug LEDs.
+//
+// Assumptions:
+//   OV7670 RESET is active-low and PWDN is active-high on the selected module.
 module top_basys3_ov7670_vga (
     input  wire        clk_100,
     input  wire        btnC,
@@ -59,11 +74,10 @@ module top_basys3_ov7670_vga (
     wire       enable_bilinear = sw_sync[8];
     reg  [3:0] camera_profile = 4'b0000;
 
-    // Camera profile switches are sampled only during btnC reset.
-    // sw[4:3] selects the base profile. sw[6] selects the OV7670 internal
-    // averaged-QVGA experiment when sw[7]=0. sw[7] selects full-VGA sensor
-    // output with FPGA-side 2x2 averaging; sw[4:3] then selects horizontal
-    // window A/B variants.
+    // Camera profile switches are sampled only during btnC reset. sw[4:3]
+    // selects the base profile, sw[6] selects the OV7670 averaged-QVGA
+    // experiment when sw[7]=0, and sw[7] selects full-VGA sensor output with
+    // FPGA-side 2x2 averaging.
     always @(posedge clk_100) begin
         if (rst_sys) begin
             camera_profile <= {sw[7], sw[6], sw[4:3]};
@@ -104,6 +118,9 @@ module top_basys3_ov7670_vga (
     reg [1:0] pixel_div = 2'd0;
     reg [1:0] xclk_div = 2'd0;
 
+    // Divide the 100 MHz board clock into a 25 MHz VGA pixel enable and a
+    // 25 MHz camera XCLK. VGA logic remains clocked by clk_100 and advances
+    // only when pixel_ce is asserted.
     always @(posedge clk_100) begin
         if (rst_sys) begin
             pixel_div <= 2'd0;
@@ -114,6 +131,8 @@ module top_basys3_ov7670_vga (
         end
     end
 
+    // Local debounce and edge detection for threshold controls. The stored
+    // threshold saturates at the 4-bit endpoints and resets to mid-scale.
     always @(posedge clk_100) begin
         if (rst_sys) begin
             btnU_count <= {BTN_DEBOUNCE_BITS{1'b0}};
@@ -234,7 +253,8 @@ module top_basys3_ov7670_vga (
         .siod_out  (siod_out)
     );
 
-    // SCCB uses an open-drain data line, so only drive low or release.
+    // SCCB SIOD is open-drain at the board pin: drive low for 0, otherwise
+    // release the line and sample the external pull-up/target response.
     assign cam_siod = (siod_oe && !siod_out) ? 1'b0 : 1'bz;
     assign siod_in  = cam_siod;
 
@@ -299,6 +319,9 @@ module top_basys3_ov7670_vga (
         .dbg_line_ge_width_plus_extra (stable_capture_dbg_line_ge_width_plus_extra)
     );
 
+    // Full-VGA capture experiment: average each 2x2 sensor block before writing
+    // the existing 320x240 framebuffer. The stable direct-capture path remains
+    // instantiated in parallel and is selected by the reset-sampled profile.
     wire        avg_capture_wr_en;
     wire [16:0] avg_capture_wr_addr;
     wire [15:0] avg_capture_wr_data;
@@ -325,6 +348,8 @@ module top_basys3_ov7670_vga (
         .dbg_line_ge_width_plus_extra (avg_capture_dbg_line_ge_width_plus_extra)
     );
 
+    // Select the active camera write/status source. The framebuffer is the
+    // intentional CDC boundary between cam_pclk writes and clk_100 VGA reads.
     assign capture_wr_en = full_avg_capture_en ? avg_capture_wr_en : stable_capture_wr_en;
     assign capture_wr_addr = full_avg_capture_en ? avg_capture_wr_addr : stable_capture_wr_addr;
     assign capture_wr_data = full_avg_capture_en ? avg_capture_wr_data : stable_capture_wr_data;
@@ -397,6 +422,7 @@ module top_basys3_ov7670_vga (
         end
     endfunction
 
+    // Round RGB565 channels down to the Basys 3 VGA DAC's RGB444 width.
     function [11:0] rgb565_to_rgb444;
         input [15:0] rgb565;
         begin
@@ -417,6 +443,7 @@ module top_basys3_ov7670_vga (
 
     reg [25:0] heartbeat = 26'd0;
 
+    // Slow visible activity indicator in the system clock domain.
     always @(posedge clk_100) begin
         if (rst_sys) begin
             heartbeat <= 26'd0;
@@ -427,6 +454,8 @@ module top_basys3_ov7670_vga (
 
     reg frame_done_toggle = 1'b0;
 
+    // Convert the camera-domain frame_done pulse into a toggle for safe
+    // synchronization into clk_100.
     always @(posedge cam_pclk) begin
         if (capture_rst) begin
             frame_done_toggle <= 1'b0;
@@ -449,6 +478,7 @@ module top_basys3_ov7670_vga (
 
     wire frame_done_event_sys = frame_done_toggle_sys ^ frame_done_toggle_sys_d;
 
+    // Stretch synchronized frame events long enough to be visible on an LED.
     always @(posedge clk_100) begin
         if (rst_sys) begin
             frame_done_toggle_sys_d <= 1'b0;
@@ -504,6 +534,8 @@ module top_basys3_ov7670_vga (
         .q_sync  (dbg_line_ge_width_plus_extra_sys)
     );
 
+    // Normal LED view reports heartbeat, init status, and frame activity.
+    // Diagnostic view exposes sticky capture-line width flags for camera tuning.
     assign led[0] = camera_diag_en ? dbg_line_seen_sys : heartbeat[25];
     assign led[1] = camera_diag_en ? dbg_line_ge_width_sys : init_done;
     assign led[2] = camera_diag_en ? dbg_line_ge_width_plus_1_sys : init_error;

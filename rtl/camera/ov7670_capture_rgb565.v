@@ -1,10 +1,27 @@
 `timescale 1ns/1ps
 
 // ov7670_capture_rgb565
-// Purpose: capture OV7670 RGB565 byte stream and produce RGB565 framebuffer writes.
-// Clock domain: camera pixel clock, pclk.
-// Ports: camera sync/data inputs and linear framebuffer write-side outputs.
-// Assumptions: RGB565 bytes arrive MSB first; VSYNC is an active-high frame boundary.
+//
+// Purpose:
+//   Capture an OV7670 RGB565 byte stream and emit bounded RGB565 framebuffer
+//   write transactions for one 320x240 frame.
+//
+// Clock domain:
+//   pclk, the camera pixel clock.
+//
+// Inputs:
+//   vsync - active-high frame boundary from the camera
+//   href  - active line/data qualifier
+//   cam_d - 8-bit camera data bus
+//
+// Outputs:
+//   wr_en/wr_addr/wr_data - camera-domain framebuffer write interface
+//   frame_done            - one-pclk pulse at the end of a non-empty frame
+//   frame_active          - asserted after byte activity begins in a frame
+//   dbg_line_*            - sticky line-length diagnostics for hardware debug
+//
+// Assumptions:
+//   RGB565 bytes arrive most-significant byte first, and VSYNC is active-high.
 module ov7670_capture_rgb565 #(
     parameter integer FRAME_WIDTH  = 320,
     parameter integer FRAME_HEIGHT = 240,
@@ -59,6 +76,10 @@ module ov7670_capture_rgb565 #(
     wire [31:0] dest_addr_full = (dest_y * FRAME_WIDTH) + dest_x;
     wire [ADDR_WIDTH-1:0] dest_addr = dest_addr_full[ADDR_WIDTH-1:0];
 
+    // Camera-domain capture process. It tracks frame/line boundaries, assembles
+    // two input bytes into one RGB565 pixel, applies optional crop offsets, and
+    // suppresses writes after the final framebuffer address until the next
+    // frame boundary.
     always @(posedge pclk) begin
         if (rst) begin
             vsync_d         <= 1'b0;
@@ -86,6 +107,8 @@ module ov7670_capture_rgb565 #(
             frame_done <= 1'b0;
 
             if (vsync) begin
+                // VSYNC marks a frame boundary and clears any partial byte pair
+                // so incomplete pixels cannot leak into the next frame.
                 byte_phase     <= 1'b0;
                 first_byte     <= 8'h00;
                 line_has_pixel <= 1'b0;
@@ -104,6 +127,8 @@ module ov7670_capture_rgb565 #(
                     dbg_line_ge_width_plus_extra <= 1'b0;
                 end
             end else if (!href) begin
+                // HREF low closes the current line. Completed-pixel line counts
+                // update the debug flags and advance the source y coordinate.
                 byte_phase <= 1'b0;
                 first_byte <= 8'h00;
 
@@ -130,9 +155,13 @@ module ov7670_capture_rgb565 #(
                 frame_active <= 1'b1;
 
                 if (!byte_phase) begin
+                    // First byte of RGB565 is held until the matching second
+                    // byte arrives on the next qualified camera transfer.
                     first_byte <= cam_d;
                     byte_phase <= 1'b1;
                 end else begin
+                    // Second byte completes the RGB565 word. In-bounds pixels
+                    // produce one write pulse at their mapped framebuffer address.
                     byte_phase     <= 1'b0;
                     line_has_pixel <= 1'b1;
 

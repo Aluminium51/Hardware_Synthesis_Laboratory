@@ -1,11 +1,27 @@
 `timescale 1ns/1ps
 
 // ov7670_capture_rgb565_2x2_avg
-// Purpose: capture a full-resolution OV7670 RGB565 stream, average each 2x2
-// source block, and write one 320x240 RGB565 pixel per block.
-// Clock domain: camera pixel clock, pclk.
-// Ports: camera sync/data inputs and linear framebuffer write-side outputs.
-// Assumptions: RGB565 bytes arrive MSB first; VSYNC is an active-high frame boundary.
+//
+// Purpose:
+//   Capture a full-resolution OV7670 RGB565 stream, average each 2x2 source
+//   block, and emit one 320x240 RGB565 framebuffer write per block.
+//
+// Clock domain:
+//   pclk, the camera pixel clock.
+//
+// Inputs:
+//   vsync - active-high frame boundary from the camera
+//   href  - active line/data qualifier
+//   cam_d - 8-bit camera data bus
+//
+// Outputs:
+//   wr_en/wr_addr/wr_data - camera-domain framebuffer write interface
+//   frame_done            - one-pclk pulse at the end of a non-empty frame
+//   frame_active          - asserted after byte activity begins in a frame
+//   dbg_line_*            - sticky line-length diagnostics for hardware debug
+//
+// Assumptions:
+//   RGB565 bytes arrive most-significant byte first, and VSYNC is active-high.
 module ov7670_capture_rgb565_2x2_avg #(
     parameter integer SRC_WIDTH  = 640,
     parameter integer SRC_HEIGHT = 480,
@@ -115,6 +131,9 @@ module ov7670_capture_rgb565_2x2_avg #(
     wire [15:0] averaged_pixel =
         avg_rgb565_2x2(top_left_hold, top_right, bottom_left, bottom_right);
 
+    // Camera-domain downsample pipeline. The previous-line storage provides the
+    // top row of each 2x2 block while previous_pixel holds the left neighbor on
+    // the current line. Writes occur only on odd x and odd y source pixels.
     always @(posedge pclk) begin
         if (rst) begin
             vsync_d         <= 1'b0;
@@ -145,6 +164,8 @@ module ov7670_capture_rgb565_2x2_avg #(
             frame_done <= 1'b0;
 
             if (vsync) begin
+                // VSYNC closes the current frame and clears partial byte/pixel
+                // context so the next frame starts from a known origin.
                 byte_phase     <= 1'b0;
                 first_byte     <= 8'h00;
                 line_has_pixel <= 1'b0;
@@ -166,6 +187,8 @@ module ov7670_capture_rgb565_2x2_avg #(
                     dbg_line_ge_width_plus_extra <= 1'b0;
                 end
             end else if (!href) begin
+                // HREF low closes the current source line, records diagnostic
+                // line-width information, and advances the source y counter.
                 byte_phase <= 1'b0;
                 first_byte <= 8'h00;
 
@@ -194,9 +217,13 @@ module ov7670_capture_rgb565_2x2_avg #(
                 frame_active <= 1'b1;
 
                 if (!byte_phase) begin
+                    // Latch the high byte of the RGB565 pixel.
                     first_byte <= cam_d;
                     byte_phase <= 1'b1;
                 end else begin
+                    // Complete the RGB565 pixel, refresh the previous-line RAM,
+                    // and emit the averaged destination pixel at the lower-right
+                    // corner of each 2x2 source block.
                     byte_phase     <= 1'b0;
                     line_has_pixel <= 1'b1;
 
