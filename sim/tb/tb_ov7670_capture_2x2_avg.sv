@@ -194,7 +194,8 @@ module tb_ov7670_capture_2x2_avg;
     integer i;
 
     initial begin
-        $dumpfile("sim/run/tb_ov7670_capture_2x2_avg.vcd");
+        // $dumpfile("sim/run/tb_ov7670_capture_2x2_avg.vcd");
+        $dumpfile("tb_ov7670_capture_2x2_avg.vcd");
         $dumpvars(0, tb_ov7670_capture_2x2_avg);
 
         errors = 0;

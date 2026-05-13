@@ -676,7 +676,8 @@ module tb_ov7670_capture;
     endtask
 
     initial begin
-        $dumpfile("sim/run/tb_ov7670_capture.vcd");
+        // $dumpfile("sim/run/tb_ov7670_capture.vcd");
+        $dumpfile("tb_ov7670_capture.vcd");
         $dumpvars(0, tb_ov7670_capture);
 
         errors = 0;

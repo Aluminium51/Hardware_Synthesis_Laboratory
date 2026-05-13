@@ -97,6 +97,9 @@ module tb_vga_timing;
     endtask
 
     initial begin
+        $dumpfile("tb_vga_timing.vcd");
+        $dumpvars(0, tb_vga_timing);
+        
         exp_x = 0;
         exp_y = 0;
         active_count = 0;

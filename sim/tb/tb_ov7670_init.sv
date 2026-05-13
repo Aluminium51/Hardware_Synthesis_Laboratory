@@ -502,7 +502,8 @@ module tb_ov7670_init;
     endtask
 
     initial begin
-        $dumpfile("sim/run/tb_ov7670_init.vcd");
+        // $dumpfile("sim/run/tb_ov7670_init.vcd");
+        $dumpfile("tb_ov7670_init.vcd");
         $dumpvars(0, tb_ov7670_init);
 
         errors = 0;

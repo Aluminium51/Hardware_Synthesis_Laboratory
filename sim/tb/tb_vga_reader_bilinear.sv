@@ -247,6 +247,9 @@ module tb_vga_reader_bilinear;
     end
 
     initial begin
+        $dumpfile("tb_vga_reader_bilinear.vcd");
+        $dumpvars(0, tb_vga_reader_bilinear);
+        
         errors = 0;
 
         repeat (4) @(posedge clk_100);
