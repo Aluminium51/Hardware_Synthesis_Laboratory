@@ -1,10 +1,29 @@
 `timescale 1ns/1ps
 
 // vga_reader_bilinear
-// Purpose: bilinear 320x240 to 640x480 upscaling using time-multiplexed BRAM reads.
-// Clock domain: clk_100 with pixel_ce indicating the 25 MHz VGA pixel cadence.
-// Outputs: framebuffer read address plus delayed sync/control and RGB565 output.
-// Assumption: rd_data is valid one clk_100 after rd_addr is presented.
+//
+// Purpose:
+//   Upscale a 320x240 RGB565 framebuffer to 640x480 using a time-multiplexed
+//   BRAM read path. Runtime bypass preserves exact nearest-neighbor behavior.
+//
+// Clock domain:
+//   clk_100, with pixel_ce marking the 25 MHz VGA pixel cadence.
+//
+// Inputs:
+//   vga_x/vga_y               - current 640x480 raster coordinate
+//   hsync_in/vsync_in         - timing signals aligned to vga_x/vga_y
+//   active_video_in           - visible-region qualifier
+//   rd_data                   - synchronous framebuffer read data
+//   enable_bilinear           - selects blended output when high
+//
+// Outputs:
+//   rd_addr                   - framebuffer address for the current fetch phase
+//   hsync_out/vsync_out       - delayed sync aligned with rgb565_out
+//   active_video_out          - delayed visible-region qualifier
+//   rgb565_out                - RGB565 upscaled pixel
+//
+// Assumption:
+//   rd_data is valid one clk_100 after rd_addr is presented.
 module vga_reader_bilinear (
     input  wire        clk_100,
     input  wire        pixel_ce,
@@ -97,6 +116,10 @@ module vga_reader_bilinear (
     wire       issued_valid_next = pixel_ce || fetch_active;
     wire       compute_valid = issued_valid_d && (issued_state_d == 2'd3);
 
+    // Read scheduler and output pipeline. Each VGA pixel starts a four-read
+    // sequence at 100 MHz: P00, P10, P01, and P11. Sync/control metadata is
+    // shifted through a matching latency pipeline so the selected pixel leaves
+    // aligned with its original raster position.
     always @(posedge clk_100) begin
         if (rst_vga) begin
             rd_addr          <= 17'd0;
@@ -223,6 +246,9 @@ module vga_reader_bilinear (
     wire [5:0] g11 = p11_use[10:5];
     wire [4:0] b11 = p11_use[4:0];
 
+    // Blend selection is based on the low bits of the original VGA coordinate:
+    // even/even uses P00, odd/even averages horizontally, even/odd averages
+    // vertically, and odd/odd averages the full 2x2 neighborhood.
     always @* begin
         r_out = r00;
         g_out = g00;

@@ -1,10 +1,25 @@
 `timescale 1ns/1ps
 
 // vga_timing_640x480
-// Purpose: generate standard 640x480 @ 60 Hz VGA timing.
-// Clock domain: clk_100 for TASK-001, advanced by a 25 MHz pixel_ce.
-// Outputs: current display coordinates, active-video flag, negative syncs.
-// Assumption: pixel_ce is one clk_100 cycle wide and pulses once per pixel.
+//
+// Purpose:
+//   Generate standard 640x480 @ 60 Hz VGA timing.
+//
+// Clock domain:
+//   clk_100, advanced by the 25 MHz pixel_ce strobe.
+//
+// Inputs:
+//   clk_100  - system clock
+//   pixel_ce - one-cycle enable for each VGA pixel
+//   rst_vga  - active-high reset in the VGA/system domain
+//
+// Outputs:
+//   hsync/vsync  - active-low VGA sync pulses
+//   active_video - asserted during the visible 640x480 region
+//   x/y          - current raster coordinate
+//
+// Assumption:
+//   pixel_ce is one clk_100 cycle wide and pulses once per output pixel.
 module vga_timing_640x480 (
     input  wire       clk_100,
     input  wire       pixel_ce,
@@ -35,6 +50,8 @@ module vga_timing_640x480 (
     reg [9:0] h_count = 10'd0;
     reg [9:0] v_count = 10'd0;
 
+    // Raster counters advance only on pixel_ce. Horizontal wrap increments the
+    // vertical counter; vertical wrap returns to the top-left pixel.
     always @(posedge clk_100) begin
         if (rst_vga) begin
             h_count <= 10'd0;
@@ -55,6 +72,8 @@ module vga_timing_640x480 (
     assign x = h_count;
     assign y = v_count;
 
+    // Decode visible area and standard active-low sync windows directly from
+    // the current raster count values.
     assign active_video = (h_count < H_ACTIVE) && (v_count < V_ACTIVE);
     assign hsync = ~((h_count >= H_SYNC_START) && (h_count < H_SYNC_END));
     assign vsync = ~((v_count >= V_SYNC_START) && (v_count < V_SYNC_END));

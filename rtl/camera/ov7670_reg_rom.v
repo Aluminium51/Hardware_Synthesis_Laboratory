@@ -1,10 +1,25 @@
 `timescale 1ns/1ps
 
 // ov7670_reg_rom
-// Purpose: fixed OV7670 startup register table for RGB565/QVGA bring-up profiles.
-// Clock domain: none; this is a combinational lookup table.
-// Ports: index selects one register/value entry and reports the final entry.
-// Assumptions: invalid indices safely alias to the final valid entry.
+//
+// Purpose:
+//   Provide the fixed OV7670 startup register table used by the RGB565/QVGA
+//   bring-up profiles.
+//
+// Clock domain:
+//   None; this is a purely combinational lookup table.
+//
+// Inputs:
+//   index   - register-table entry selector
+//   profile - camera profile selector sampled by the top-level reset path
+//
+// Outputs:
+//   reg_addr - OV7670 register address for the selected entry
+//   reg_data - data byte for the selected entry
+//   is_last  - asserted on the final table entry
+//
+// Assumption:
+//   Invalid indices safely alias to the final valid entry.
 //
 // Profile map:
 // - 0000: live auto, normal speed
@@ -31,6 +46,7 @@ module ov7670_reg_rom (
     function [16:0] rom_entry;
         input [7:0] entry_index;
         begin
+            // Entry format is {is_last, reg_addr[7:0], reg_data[7:0]}.
             rom_entry = {1'b1, 8'h42, profile_com17(profile)}; // Default/fallback: final COM17 profile entry.
 
             case (entry_index)
@@ -122,7 +138,7 @@ module ov7670_reg_rom (
                 8'd80:  rom_entry = {1'b0, 8'hB0, 8'h84}; // RSVD/BLC: black-level calibration tuning.
                 8'd81:  rom_entry = {1'b0, 8'hB1, 8'h0C}; // ABLC1: automatic black-level calibration tuning.
                 8'd82:  rom_entry = {1'b0, 8'hB2, 8'h0E}; // Reference/reserved black-level tuning.
-                8'd83:  rom_entry = {1'b0, 8'hB3, 8'h82}; // THL_ST: black-level threshold tuning. // try changing to kill red sparkle in dark
+                8'd83:  rom_entry = {1'b0, 8'hB3, 8'h82}; // THL_ST: black-level threshold tuning; candidate for dark-noise experiments.
                 8'd84:  rom_entry = {1'b0, 8'hB8, 8'h0A}; // Reference/reserved black-level tuning.
 
                 // Matrix and saturation controls.
@@ -167,7 +183,7 @@ module ov7670_reg_rom (
                 8'd121: rom_entry = {1'b0, 8'h76, 8'hE1}; // Reference/reserved DSP tuning.
                 8'd122: rom_entry = {1'b0, 8'h4C, 8'h00}; // DNSTH: denoise threshold; profile override later.
                 8'd123: rom_entry = {1'b0, 8'h77, 8'h01}; // Reference/reserved DSP tuning.
-                8'd124: rom_entry = {1'b0, 8'h4B, 8'h09}; // REG4B: reference DSP/color tuning. // increase UV filter from 09 to 0E
+                8'd124: rom_entry = {1'b0, 8'h4B, 8'h09}; // REG4B: reference DSP/color tuning; candidate for UV-filter experiments.
                 8'd125: rom_entry = {1'b0, 8'hC9, 8'hF0}; // SATCTR: saturation control.
                 8'd126: rom_entry = {1'b0, 8'h41, 8'h38}; // COM16: final denoise/edge/AWB gain option mix.
                 8'd127: rom_entry = {1'b0, 8'h56, 8'h40}; // CONTRAS: contrast control.
@@ -396,7 +412,7 @@ module ov7670_reg_rom (
         input [3:0] profile_value;
         begin
             case (profile_value)
-                4'b0001: profile_com9 = 8'h00; // Drop from 4x to 2x max gain
+                4'b0001: profile_com9 = 8'h00; // Limit maximum AGC gain for the low-noise profile.
                 4'b0010: profile_com9 = 8'h00; // 2x max AGC for slower diagnostic mode.
                 default: profile_com9 = 8'h28;
             endcase
@@ -430,7 +446,7 @@ module ov7670_reg_rom (
         begin
             case (profile_value)
                 4'b0001,
-                4'b0010: profile_dnsth = 8'h0C; // Increase from 0x04 to 0x0C
+                4'b0010: profile_dnsth = 8'h0C; // Raise denoise threshold for low-noise profiles.
                 default: profile_dnsth = 8'h00;
             endcase
         end
