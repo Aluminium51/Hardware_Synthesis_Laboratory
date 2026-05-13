@@ -11,7 +11,7 @@ module top_basys3_ov7670_vga (
     input  wire        btnC,
     input  wire        btnU,
     input  wire        btnD,
-    input  wire [7:0]  sw,
+    input  wire [8:0]  sw,
     output wire        Hsync,
     output wire        Vsync,
     output wire [3:0]  vgaRed,
@@ -39,11 +39,11 @@ module top_basys3_ov7670_vga (
 
     wire rst_vga = rst_sys;
 
-    wire [7:0] sw_sync;
+    wire [8:0] sw_sync;
 
     genvar sw_i;
     generate
-        for (sw_i = 0; sw_i < 8; sw_i = sw_i + 1) begin : gen_sw_sync
+        for (sw_i = 0; sw_i < 9; sw_i = sw_i + 1) begin : gen_sw_sync
             sync_2ff u_sync_sw (
                 .clk     (clk_100),
                 .rst     (rst_sys),
@@ -56,6 +56,7 @@ module top_basys3_ov7670_vga (
     wire       debug_pattern_en = sw_sync[5];
     wire       camera_diag_en = sw_sync[2];
     wire [1:0] filter_mode = sw_sync[1:0];
+    wire       enable_bilinear = sw_sync[8];
     reg  [3:0] camera_profile = 4'b0000;
 
     // Camera profile switches are sampled only during btnC reset.
@@ -351,7 +352,7 @@ module top_basys3_ov7670_vga (
     wire        active_video_reader;
     wire [15:0] reader_rgb565;
 
-    vga_reader_320x240 u_vga_reader (
+    vga_reader_bilinear u_vga_reader (
         .clk_100          (clk_100),
         .pixel_ce         (pixel_ce),
         .rst_vga          (rst_vga),
@@ -361,6 +362,7 @@ module top_basys3_ov7670_vga (
         .vsync_in         (vsync_timing),
         .active_video_in  (active_video),
         .rd_data          (fb_rd_data),
+        .enable_bilinear  (enable_bilinear),
         .rd_addr          (fb_rd_addr),
         .hsync_out        (hsync_reader),
         .vsync_out        (vsync_reader),
