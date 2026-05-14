@@ -17,7 +17,7 @@ OV7670 Camera
             │
             └── framebuffer read port in VGA domain
                     │
-                    ├── 320x240 -> 640x480 scaling
+                    ├── 320x240 -> 640x480 2x scaling, or reset-selected 1280x960 4x scaling
                     ├── filter select
                     └── VGA RGB + sync output
 ```
@@ -54,6 +54,13 @@ Completed baseline:
 - camera `XCLK` is generated in the top level with a simple divide-by-4 from `clk_100`
 - live OV7670 video is captured into the framebuffer and displayed through the VGA readout path
 
+Optional reset-selected 4x output mode:
+- `sw[9]` is sampled only while `btnC` reset is held
+- `sw[9]=0` keeps the 640x480 path using the existing 2x bilinear reader
+- `sw[9]=1` selects a 108 MHz VGA/read clock, 1280x960 timing, and the 4x bilinear reader
+- changing `sw[9]` while running does not switch resolution until reset is pressed again
+- `sw[8]` remains a live nearest-neighbor/bilinear control in both modes
+
 ## VGA side
 ### `rtl/vga/vga_timing_640x480.v`
 Responsibilities:
@@ -67,6 +74,12 @@ Key outputs:
 - `x`
 - `y`
 
+### `rtl/vga/vga_timing_1280x960.v`
+Responsibilities:
+- generate standard 1280x960 @ 60 Hz timing from a 108 MHz pixel clock
+- expose visible coordinates, active region, positive syncs, and full timing counters
+- provide `h_count` and `v_count` so the 4x reader can schedule line-buffer loads during blanking
+
 ### `rtl/vga/vga_reader_320x240.v`
 Responsibilities:
 - convert 640x480 display coordinates into 320x240 framebuffer coordinates
@@ -76,6 +89,19 @@ Responsibilities:
 Core mapping rule:
 - `src_x = x >> 1`
 - `src_y = y >> 1`
+
+### `rtl/vga/vga_reader_bilinear_4x.v`
+Responsibilities:
+- convert 1280x960 display coordinates into 320x240 framebuffer coordinates
+- generate 4x nearest-neighbor or bilinear RGB565 output on the VGA readout path
+- preload and roll two 320-pixel RGB565 line buffers during blanking
+- avoid creating any 1280x960 or 640x480 framebuffer
+
+Core mapping rule:
+- `src_x = x >> 2`
+- `src_y = y >> 2`
+- `frac_x = x[1:0]`
+- `frac_y = y[1:0]`
 
 ### `rtl/vga/test_pattern.v`
 Responsibilities:

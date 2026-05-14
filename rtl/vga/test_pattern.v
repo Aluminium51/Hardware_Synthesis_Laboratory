@@ -6,7 +6,7 @@
 // Inputs: current VGA coordinate and active-video flag.
 // Assumption: callers drive RGB to black when active_video is low.
 module test_pattern (
-    input  wire [9:0]  x,
+    input  wire [10:0] x,
     input  wire [9:0]  y,
     input  wire        active_video,
     output reg  [11:0] rgb444

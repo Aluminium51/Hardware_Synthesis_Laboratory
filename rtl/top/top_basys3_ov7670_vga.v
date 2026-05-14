@@ -2,7 +2,7 @@
 
 // top_basys3_ov7670_vga
 // Purpose: OV7670 camera-to-framebuffer-to-VGA integration with readout filters.
-// Clock domains: clk_100 for VGA/control, cam_pclk for camera capture.
+// Clock domains: clk_100 for control/SCCB, selected VGA/read clock, cam_pclk for camera capture.
 // Outputs: VGA sync/RGB, OV7670 control pins, SCCB pins, and debug LEDs.
 // Inputs: slide switches select VGA test-pattern/filter/profile mode; buttons adjust threshold.
 // Assumptions: OV7670 RESET is active-low and PWDN is active-high on the selected module.
@@ -11,7 +11,7 @@ module top_basys3_ov7670_vga (
     input  wire        btnC,
     input  wire        btnU,
     input  wire        btnD,
-    input  wire [8:0]  sw,
+    input  wire [9:0]  sw,
     output wire        Hsync,
     output wire        Vsync,
     output wire [3:0]  vgaRed,
@@ -37,8 +37,6 @@ module top_basys3_ov7670_vga (
         .rst_sync  (rst_sys)
     );
 
-    wire rst_vga = rst_sys;
-
     wire [8:0] sw_sync;
 
     genvar sw_i;
@@ -53,11 +51,10 @@ module top_basys3_ov7670_vga (
         end
     endgenerate
 
-    wire       debug_pattern_en = sw_sync[5];
+    wire       debug_pattern_en_sys = sw_sync[5];
     wire       camera_diag_en = sw_sync[2];
-    wire [1:0] filter_mode = sw_sync[1:0];
-    wire       enable_bilinear = sw_sync[8];
     reg  [3:0] camera_profile = 4'b0000;
+    reg        mode_4x_latched = 1'b0;
 
     // Camera profile switches are sampled only during btnC reset.
     // sw[4:3] selects the base profile. sw[6] selects the OV7670 internal
@@ -67,6 +64,7 @@ module top_basys3_ov7670_vga (
     always @(posedge clk_100) begin
         if (rst_sys) begin
             camera_profile <= {sw[7], sw[6], sw[4:3]};
+            mode_4x_latched <= sw[9];
         end
     end
 
@@ -101,15 +99,12 @@ module top_basys3_ov7670_vga (
     wire btnD_press = btnD_state && !btnD_state_d;
     wire [3:0] filter_threshold = filter_threshold_reg;
 
-    reg [1:0] pixel_div = 2'd0;
     reg [1:0] xclk_div = 2'd0;
 
     always @(posedge clk_100) begin
         if (rst_sys) begin
-            pixel_div <= 2'd0;
             xclk_div  <= 2'd0;
         end else begin
-            pixel_div <= pixel_div + 1'b1;
             xclk_div  <= xclk_div + 1'b1;
         end
     end
@@ -157,25 +152,153 @@ module top_basys3_ov7670_vga (
         end
     end
 
-    wire pixel_ce = (pixel_div == 2'd3);
     assign cam_xclk = xclk_div[1];
 
-    wire       hsync_timing;
-    wire       vsync_timing;
-    wire       active_video;
-    wire [9:0] x;
-    wire [9:0] y;
+    wire clk_108;
+    wire clk108_locked;
+    wire selected_vga_clk;
 
-    vga_timing_640x480 u_vga_timing (
-        .clk_100      (clk_100),
-        .pixel_ce     (pixel_ce),
-        .rst_vga      (rst_vga),
-        .hsync        (hsync_timing),
-        .vsync        (vsync_timing),
-        .active_video (active_video),
-        .x            (x),
-        .y            (y)
+    vga_clock_108 u_vga_clock_108 (
+        .clk_100 (clk_100),
+        .rst     (rst_sys),
+        .clk_108 (clk_108),
+        .locked  (clk108_locked)
     );
+
+    vga_clock_select u_vga_clock_select (
+        .clk_100    (clk_100),
+        .clk_108    (clk_108),
+        .select_108 (mode_4x_latched),
+        .clk_out    (selected_vga_clk)
+    );
+
+    wire vga_clock_ready = mode_4x_latched ? clk108_locked : 1'b1;
+    wire vga_rst_async = rst_sys | ~vga_clock_ready;
+    wire rst_vga;
+
+    reset_sync u_reset_sync_vga (
+        .clk       (selected_vga_clk),
+        .rst_async (vga_rst_async),
+        .rst_sync  (rst_vga)
+    );
+
+    wire mode_4x_vga;
+
+    sync_2ff u_sync_mode_4x_vga (
+        .clk     (selected_vga_clk),
+        .rst     (rst_vga),
+        .d_async (mode_4x_latched),
+        .q_sync  (mode_4x_vga)
+    );
+
+    wire enable_2x = ~mode_4x_vga;
+    wire enable_4x = mode_4x_vga;
+
+    wire debug_pattern_en;
+    wire enable_bilinear;
+    wire [1:0] filter_mode;
+    wire [3:0] filter_threshold_vga;
+    wire init_done;
+    wire init_error;
+
+    sync_2ff u_sync_debug_pattern_vga (
+        .clk     (selected_vga_clk),
+        .rst     (rst_vga),
+        .d_async (debug_pattern_en_sys),
+        .q_sync  (debug_pattern_en)
+    );
+
+    sync_2ff u_sync_bilinear_vga (
+        .clk     (selected_vga_clk),
+        .rst     (rst_vga),
+        .d_async (sw[8]),
+        .q_sync  (enable_bilinear)
+    );
+
+    wire init_done_vga;
+
+    sync_2ff u_sync_init_done_vga (
+        .clk     (selected_vga_clk),
+        .rst     (rst_vga),
+        .d_async (init_done),
+        .q_sync  (init_done_vga)
+    );
+
+    genvar vga_ctl_i;
+    generate
+        for (vga_ctl_i = 0; vga_ctl_i < 2; vga_ctl_i = vga_ctl_i + 1) begin : gen_filter_mode_sync
+            sync_2ff u_sync_filter_mode (
+                .clk     (selected_vga_clk),
+                .rst     (rst_vga),
+                .d_async (sw[vga_ctl_i]),
+                .q_sync  (filter_mode[vga_ctl_i])
+            );
+        end
+
+        for (vga_ctl_i = 0; vga_ctl_i < 4; vga_ctl_i = vga_ctl_i + 1) begin : gen_threshold_sync
+            sync_2ff u_sync_threshold (
+                .clk     (selected_vga_clk),
+                .rst     (rst_vga),
+                .d_async (filter_threshold[vga_ctl_i]),
+                .q_sync  (filter_threshold_vga[vga_ctl_i])
+            );
+        end
+    endgenerate
+
+    reg [1:0] pixel_div_vga = 2'd0;
+
+    always @(posedge selected_vga_clk) begin
+        if (rst_vga) begin
+            pixel_div_vga <= 2'd0;
+        end else begin
+            pixel_div_vga <= pixel_div_vga + 1'b1;
+        end
+    end
+
+    wire pixel_ce_2x = (pixel_div_vga == 2'd3);
+
+    wire        hsync_timing_2x;
+    wire        vsync_timing_2x;
+    wire        active_video_2x;
+    wire [9:0]  x_2x;
+    wire [9:0]  y_2x;
+
+    vga_timing_640x480 u_vga_timing_640x480 (
+        .clk_100      (selected_vga_clk),
+        .pixel_ce     (pixel_ce_2x),
+        .rst_vga      (rst_vga),
+        .hsync        (hsync_timing_2x),
+        .vsync        (vsync_timing_2x),
+        .active_video (active_video_2x),
+        .x            (x_2x),
+        .y            (y_2x)
+    );
+
+    wire        hsync_timing_4x;
+    wire        vsync_timing_4x;
+    wire        active_video_4x;
+    wire [10:0] x_4x;
+    wire [9:0]  y_4x;
+    wire [10:0] h_count_4x;
+    wire [9:0]  v_count_4x;
+
+    vga_timing_1280x960 u_vga_timing_1280x960 (
+        .clk          (selected_vga_clk),
+        .rst          (rst_vga),
+        .vga_x        (x_4x),
+        .vga_y        (y_4x),
+        .active_video (active_video_4x),
+        .hsync        (hsync_timing_4x),
+        .vsync        (vsync_timing_4x),
+        .h_count      (h_count_4x),
+        .v_count      (v_count_4x)
+    );
+
+    wire        hsync_timing = mode_4x_vga ? hsync_timing_4x : hsync_timing_2x;
+    wire        vsync_timing = mode_4x_vga ? vsync_timing_4x : vsync_timing_2x;
+    wire        active_video = mode_4x_vga ? active_video_4x : active_video_2x;
+    wire [10:0] x = mode_4x_vga ? x_4x : {1'b0, x_2x};
+    wire [9:0]  y = mode_4x_vga ? y_4x : y_2x;
 
     wire [11:0] pattern_rgb444;
 
@@ -196,9 +319,6 @@ module top_basys3_ov7670_vga (
     wire        siod_in;
     wire        siod_oe;
     wire        siod_out;
-    wire        init_done;
-    wire        init_error;
-
     ov7670_init u_ov7670_init (
         .clk            (clk_100),
         .rst            (rst_sys),
@@ -342,40 +462,75 @@ module top_basys3_ov7670_vga (
         .wr_en   (capture_wr_en),
         .wr_addr (capture_wr_addr),
         .wr_data (capture_wr_data),
-        .rd_clk  (clk_100),
+        .rd_clk  (selected_vga_clk),
         .rd_addr (fb_rd_addr),
         .rd_data (fb_rd_data)
     );
 
-    wire        hsync_reader;
-    wire        vsync_reader;
-    wire        active_video_reader;
-    wire [15:0] reader_rgb565;
+    wire [16:0] fb_rd_addr_2x;
+    wire [16:0] fb_rd_addr_4x;
+
+    assign fb_rd_addr = mode_4x_vga ? fb_rd_addr_4x : fb_rd_addr_2x;
+
+    wire        hsync_reader_2x;
+    wire        vsync_reader_2x;
+    wire        active_video_reader_2x;
+    wire [15:0] reader_rgb565_2x;
 
     vga_reader_bilinear u_vga_reader (
-        .clk_100          (clk_100),
-        .pixel_ce         (pixel_ce),
+        .clk_100          (selected_vga_clk),
+        .pixel_ce         (pixel_ce_2x),
         .rst_vga          (rst_vga),
-        .vga_x            (x),
-        .vga_y            (y),
-        .hsync_in         (hsync_timing),
-        .vsync_in         (vsync_timing),
-        .active_video_in  (active_video),
+        .vga_x            (x_2x),
+        .vga_y            (y_2x),
+        .hsync_in         (hsync_timing_2x),
+        .vsync_in         (vsync_timing_2x),
+        .active_video_in  (active_video_2x),
         .rd_data          (fb_rd_data),
         .enable_bilinear  (enable_bilinear),
-        .rd_addr          (fb_rd_addr),
-        .hsync_out        (hsync_reader),
-        .vsync_out        (vsync_reader),
-        .active_video_out (active_video_reader),
-        .rgb565_out       (reader_rgb565)
+        .rd_addr          (fb_rd_addr_2x),
+        .hsync_out        (hsync_reader_2x),
+        .vsync_out        (vsync_reader_2x),
+        .active_video_out (active_video_reader_2x),
+        .rgb565_out       (reader_rgb565_2x)
     );
+
+    wire        hsync_reader_4x;
+    wire        vsync_reader_4x;
+    wire        active_video_reader_4x;
+    wire [15:0] reader_rgb565_4x;
+
+    vga_reader_bilinear_4x u_vga_reader_4x (
+        .clk              (selected_vga_clk),
+        .rst              (rst_vga),
+        .enable           (enable_4x),
+        .enable_bilinear  (enable_bilinear),
+        .vga_x            (x_4x),
+        .vga_y            (y_4x),
+        .h_count          (h_count_4x),
+        .v_count          (v_count_4x),
+        .active_video_in  (active_video_4x),
+        .hsync_in         (hsync_timing_4x),
+        .vsync_in         (vsync_timing_4x),
+        .fb_rd_addr       (fb_rd_addr_4x),
+        .fb_rd_data       (fb_rd_data),
+        .pixel_out        (reader_rgb565_4x),
+        .active_video_out (active_video_reader_4x),
+        .hsync_out        (hsync_reader_4x),
+        .vsync_out        (vsync_reader_4x)
+    );
+
+    wire        hsync_reader = mode_4x_vga ? hsync_reader_4x : hsync_reader_2x;
+    wire        vsync_reader = mode_4x_vga ? vsync_reader_4x : vsync_reader_2x;
+    wire        active_video_reader = mode_4x_vga ? active_video_reader_4x : active_video_reader_2x;
+    wire [15:0] reader_rgb565 = mode_4x_vga ? reader_rgb565_4x : reader_rgb565_2x;
 
     wire [15:0] filtered_rgb565;
 
     video_filter_basic u_video_filter_basic (
         .rgb565_in  (reader_rgb565),
         .mode       (filter_mode),
-        .threshold  (filter_threshold),
+        .threshold  (filter_threshold_vga),
         .rgb565_out (filtered_rgb565)
     );
 
@@ -409,7 +564,7 @@ module top_basys3_ov7670_vga (
     endfunction
 
     wire [11:0] filtered_rgb444 = rgb565_to_rgb444(filtered_rgb565);
-    wire [11:0] camera_rgb444 = (init_done && active_video_reader) ?
+    wire [11:0] camera_rgb444 = (init_done_vga && active_video_reader) ?
                                 filtered_rgb444 : 12'h000;
     wire [11:0] display_rgb444 = debug_pattern_en ? pattern_rgb444 : camera_rgb444;
     wire        display_hsync = debug_pattern_en ? hsync_timing : hsync_reader;
@@ -508,6 +663,7 @@ module top_basys3_ov7670_vga (
     assign led[1] = camera_diag_en ? dbg_line_ge_width_sys : init_done;
     assign led[2] = camera_diag_en ? dbg_line_ge_width_plus_1_sys : init_error;
     assign led[3] = camera_diag_en ? dbg_line_ge_width_plus_extra_sys :
-                                     (frame_activity_hold != 24'd0);
+                                     (mode_4x_latched ? clk108_locked :
+                                                        (frame_activity_hold != 24'd0));
 
 endmodule

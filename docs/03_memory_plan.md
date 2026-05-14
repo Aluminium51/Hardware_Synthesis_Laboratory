@@ -94,6 +94,15 @@ Therefore:
 
 This creates exact 2x integer scaling in both dimensions.
 
+Optional 1280x960 output mode:
+- the framebuffer remains `320x240x16` RGB565
+- no 640x480 or 1280x960 framebuffer is allocated
+- `src_x = vga_x >> 2`
+- `src_y = vga_y >> 2`
+- the 4x reader uses two distributed 320-pixel RGB565 line buffers for bilinear reuse
+- line-buffer storage is `2 * 320 * 16 = 10,240` bits
+- the line buffers are explicitly marked as distributed RAM first to avoid unexpected BRAM pressure
+
 ## BRAM interface plan
 Preferred baseline interface:
 - true dual-port BRAM
@@ -149,3 +158,4 @@ Possible future upgrades:
 - dual-port BRAM
 - linear addressing
 - filters applied after BRAM read
+- optional 1280x960 4x output is generated on the fly with two small line buffers

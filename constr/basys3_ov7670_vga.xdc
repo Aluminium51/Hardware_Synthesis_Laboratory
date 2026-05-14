@@ -34,7 +34,7 @@ set_property -dict { PACKAGE_PIN V15 IOSTANDARD LVCMOS33 } [get_ports {sw[5]}]
 set_property -dict { PACKAGE_PIN W14 IOSTANDARD LVCMOS33 } [get_ports {sw[6]}]
 set_property -dict { PACKAGE_PIN W13 IOSTANDARD LVCMOS33 } [get_ports {sw[7]}]
 set_property -dict { PACKAGE_PIN V2  IOSTANDARD LVCMOS33 } [get_ports {sw[8]}]
-# set_property -dict { PACKAGE_PIN T3  IOSTANDARD LVCMOS33 } [get_ports {sw[9]}]
+set_property -dict { PACKAGE_PIN T3  IOSTANDARD LVCMOS33 } [get_ports {sw[9]}]
 # set_property -dict { PACKAGE_PIN T2  IOSTANDARD LVCMOS33 } [get_ports {sw[10]}]
 # set_property -dict { PACKAGE_PIN R3  IOSTANDARD LVCMOS33 } [get_ports {sw[11]}]
 # set_property -dict { PACKAGE_PIN W2  IOSTANDARD LVCMOS33 } [get_ports {sw[12]}]
@@ -91,8 +91,15 @@ set_property -dict { PACKAGE_PIN A15 IOSTANDARD LVCMOS33 } [get_ports cam_siod]
 set_property PULLUP true [get_ports cam_siod]
 
 set_clock_groups -asynchronous \
-    -group [get_clocks clk_100_pin] \
+    -group [get_clocks -include_generated_clocks clk_100_pin] \
     -group [get_clocks cam_pclk_pin]
+
+# The 108 MHz VGA/read clock is MMCM-derived, but all system-to-VGA controls
+# are synchronized and the clock mux selects either 100 MHz or 108 MHz only
+# during reset. Do not time impossible direct 100 MHz <-> 108 MHz crossings.
+set_clock_groups -asynchronous \
+    -group [get_clocks clk_100_pin] \
+    -group [get_clocks clk108_unbuf]
 
 ## =========================================================
 ## Configuration options
