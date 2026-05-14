@@ -726,6 +726,37 @@ Notes:
 - no RTL was changed by this report
 - recommended next tests focus on `COM16`, `COM9`, and `SATCTR` before changing matrix/AWB registers
 
+## 2026-05-14 - Reset-selected 4x bilinear VGA mode
+Tool: ChatGPT Codex
+Used for:
+- added a 108 MHz VGA clock module and clock mux wrapper
+- added 1280x960 timing and a line-buffered 4x bilinear VGA reader
+- integrated reset-latched `sw[9]` mode selection and live `sw[8]` bilinear bypass
+- added focused simulations for timing, 4x reader math/line loading, and top-level mode selection
+Files affected:
+- `rtl/clock/vga_clock_108.v`
+- `rtl/clock/vga_clock_select.v`
+- `rtl/vga/vga_timing_1280x960.v`
+- `rtl/vga/vga_reader_bilinear_4x.v`
+- `rtl/vga/test_pattern.v`
+- `rtl/top/top_basys3_ov7670_vga.v`
+- `constr/basys3_ov7670_vga.xdc`
+- `sim/tb/tb_vga_timing_1280x960.sv`
+- `sim/tb/tb_vga_reader_bilinear_4x.sv`
+- `sim/tb/tb_top_vga_mode_select.sv`
+- `docs/01_architecture.md`
+- `docs/02_clock_domains.md`
+- `docs/03_memory_plan.md`
+- `docs/tasks/TASK-008-reset-selected-4x-bilinear.md`
+- `docs/07_ai_usage_log.md`
+Human review performed:
+- pending hardware synthesis/utilization review and board test
+Notes:
+- 4x mode does not allocate a larger framebuffer
+- the 4x reader uses two distributed 320-pixel RGB565 line buffers and loads them during blanking
+- synthesis should confirm line buffers do not consume unexpected BRAM and that ILA/debug BRAM remains controlled
+- follow-up hardware fix forced Vivado primitive clocking outside Icarus-only simulation, pipelined the 4x reader interpolation path, synchronized the mode select into the selected VGA domain, widened the asynchronous clock group to include generated clocks, and made `led[3]` show 108 MHz lock in 4x mode
+
 ## Future logging examples
 
 ### Example for RTL generation

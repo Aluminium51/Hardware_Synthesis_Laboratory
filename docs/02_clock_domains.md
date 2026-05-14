@@ -41,6 +41,14 @@ TASK-001 bring-up note:
 - This avoids treating a fabric-divided flip-flop output as a project-wide clock.
 - A true `clk_vga` from Clock Wizard / MMCM can still be introduced later if framebuffer integration or monitor behavior requires it.
 
+Reset-selected output-mode note:
+- 640x480 2x mode uses `clk_100` as the selected VGA/read clock and advances timing with a 25 MHz `pixel_ce`.
+- 1280x960 4x mode uses an MMCM-derived 108 MHz clock and advances one output pixel per clock.
+- The selected VGA/read clock is chosen with a Xilinx clock mux primitive in synthesis.
+- `sw[9]` is latched only during reset, so the clock selection is static after reset release.
+- The framebuffer read port is clocked by the selected VGA/read clock.
+- `rst_vga` is synchronized into the selected VGA/read clock domain and is held while the selected 108 MHz clock is not locked.
+
 ## 3. Camera master clock output domain
 Name:
 - `cam_xclk`

@@ -1,0 +1,37 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.2 (win64) Build 6299465 Fri Nov 14 19:35:11 GMT 2025
+| Date         : Thu May 14 11:52:49 2026
+| Host         : ChampLAPTOP running 64-bit major release  (build 9200)
+| Command      : report_utilization -hierarchical -hierarchical_depth 6 -file C:/Users/thana/Documents/Year2/Semester2/HwSynLab/Hardware_Synthesis_Laboratory/reports/timing/util_hier_4x_synth.rpt
+| Design       : top_basys3_ov7670_vga
+| Device       : xc7a35tcpg236-1
+| Speed File   : -1
+| Design State : Synthesized
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++----------------------------+-------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+|          Instance          |             Module            | Total LUTs | Logic LUTs | LUTRAMs | SRLs | FFs | RAMB36 | RAMB18 | DSP Blocks |
++----------------------------+-------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+| top_basys3_ov7670_vga      |                         (top) |       2232 |       1566 |     660 |    6 | 864 |     48 |      0 |          0 |
+|   (top_basys3_ov7670_vga)  |                         (top) |         12 |         12 |       0 |    0 | 107 |      0 |      0 |          0 |
+|   u_ov7670_capture         |         ov7670_capture_rgb565 |         65 |         65 |       0 |    0 |  71 |      0 |      0 |          0 |
+|   u_ov7670_capture_2x2_avg | ov7670_capture_rgb565_2x2_avg |        493 |        273 |     220 |    0 | 102 |      0 |      0 |          0 |
+|   u_ov7670_init            |                   ov7670_init |        163 |        163 |       0 |    0 |  71 |      0 |      0 |          0 |
+|   u_ov7670_sccb_master     |            ov7670_sccb_master |         57 |         57 |       0 |    0 |  70 |      0 |      0 |          0 |
+|   u_vga_reader             |           vga_reader_bilinear |        160 |        154 |       0 |    6 | 185 |      0 |      0 |          0 |
+|   u_vga_reader_4x          |        vga_reader_bilinear_4x |        924 |        484 |     440 |    0 | 155 |      0 |      0 |          0 |
+|   u_vga_timing_1280x960    |           vga_timing_1280x960 |        185 |        185 |       0 |    0 |  21 |      0 |      0 |          0 |
+|   u_vga_timing_640x480     |            vga_timing_640x480 |         55 |         55 |       0 |    0 |  20 |      0 |      0 |          0 |
++----------------------------+-------------------------------+------------+------------+---------+------+-----+--------+--------+------------+
+
+
