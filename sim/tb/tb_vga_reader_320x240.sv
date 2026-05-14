@@ -143,6 +143,9 @@ module tb_vga_reader_320x240;
     endtask
 
     initial begin
+        $dumpfile("tb_vga_reader_320x240.vcd");
+        $dumpvars(0, tb_vga_reader_320x240);
+
         errors = 0;
 
         repeat (3) @(posedge clk_100);

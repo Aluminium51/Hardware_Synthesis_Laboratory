@@ -99,7 +99,8 @@ module tb_video_filter_basic;
     endtask
 
     initial begin
-        $dumpfile("sim/run/tb_video_filter_basic.vcd");
+        // $dumpfile("sim/run/tb_video_filter_basic.vcd");
+        $dumpfile("tb_video_filter_basic.vcd");
         $dumpvars(0, tb_video_filter_basic);
 
         errors = 0;

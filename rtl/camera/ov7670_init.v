@@ -1,10 +1,27 @@
 `timescale 1ns/1ps
 
 // ov7670_init
-// Purpose: sequence the OV7670 startup register ROM through the SCCB master.
-// Clock domain: system/config clock, normally clk_100.
-// Ports: explicit start/status interface plus SCCB-master transaction controls.
-// Assumptions: SCCB done is a completion pulse; ack_error is valid with done.
+//
+// Purpose:
+//   Sequence the OV7670 startup register ROM through the SCCB master.
+//
+// Clock domain:
+//   System/config clock, normally clk_100.
+//
+// Inputs:
+//   start_init       - request to begin camera initialization
+//   profile          - reset-sampled camera register profile selector
+//   sccb_busy/done   - SCCB master transaction status
+//   sccb_ack_error   - SCCB ACK failure indication, valid with sccb_done
+//
+// Outputs:
+//   sccb_start       - one-cycle request pulse to the SCCB master
+//   sccb_*           - latched SCCB transaction fields
+//   init_busy        - asserted while the ROM sequence is running
+//   init_done/error  - sticky completion status until reset
+//
+// Assumptions:
+//   sccb_done is a completion pulse, and sccb_ack_error is valid with done.
 module ov7670_init #(
     parameter integer STARTUP_DELAY_CLKS    = 1000000,
     parameter integer POST_RESET_DELAY_CLKS = 1000000,
@@ -62,6 +79,9 @@ module ov7670_init #(
         .is_last  (rom_is_last)
     );
 
+    // Initialization controller. The FSM waits for startup stabilization, then
+    // issues one SCCB write per ROM entry. A COM7 soft reset entry receives an
+    // additional post-reset delay before the sequence continues.
     always @(posedge clk) begin
         if (rst) begin
             state                  <= ST_STARTUP_WAIT;
@@ -85,6 +105,8 @@ module ov7670_init #(
 
             case (state)
                 ST_STARTUP_WAIT: begin
+                    // Hold off SCCB traffic until the camera power/reset path
+                    // has had time to settle.
                     if ((STARTUP_DELAY_CLKS <= 0) ||
                         (startup_delay_count >= STARTUP_DELAY_LIMIT)) begin
                         if (start_seen || start_init) begin
@@ -100,6 +122,8 @@ module ov7670_init #(
                 end
 
                 ST_WAIT_START: begin
+                    // After the startup delay expires, wait for an explicit
+                    // initialization request from the top-level control policy.
                     if (start_init) begin
                         start_seen <= 1'b1;
                         init_busy  <= 1'b1;
@@ -109,6 +133,8 @@ module ov7670_init #(
                 end
 
                 ST_LOAD_ENTRY: begin
+                    // Capture the current ROM entry so transaction fields remain
+                    // stable for the entire SCCB write.
                     sccb_reg_addr   <= rom_reg_addr;
                     sccb_reg_data   <= rom_reg_data;
                     current_is_last <= rom_is_last;
@@ -116,6 +142,8 @@ module ov7670_init #(
                 end
 
                 ST_ISSUE_WRITE: begin
+                    // Start each SCCB transaction only when the transport layer
+                    // is idle.
                     if (!sccb_busy) begin
                         sccb_start <= 1'b1;
                         state      <= ST_WAIT_SCCB;
@@ -123,6 +151,8 @@ module ov7670_init #(
                 end
 
                 ST_WAIT_SCCB: begin
+                    // Completion either advances to the next ROM entry, enters
+                    // the post-reset delay, or latches terminal status.
                     if (sccb_done) begin
                         if (sccb_ack_error) begin
                             init_busy  <= 1'b0;
@@ -144,6 +174,8 @@ module ov7670_init #(
                 end
 
                 ST_POST_RESET: begin
+                    // The OV7670 requires time after the COM7 soft reset before
+                    // subsequent register writes are reliable.
                     if ((POST_RESET_DELAY_CLKS <= 0) ||
                         (post_reset_delay_count >= POST_RESET_DELAY_LIMIT)) begin
                         rom_index <= rom_index + 1'b1;

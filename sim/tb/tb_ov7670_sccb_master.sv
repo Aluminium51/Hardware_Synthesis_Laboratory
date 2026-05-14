@@ -306,7 +306,8 @@ module tb_ov7670_sccb_master;
     endtask
 
     initial begin
-        $dumpfile("sim/run/tb_ov7670_sccb_master.vcd");
+        // $dumpfile("sim/run/tb_ov7670_sccb_master.vcd");
+        $dumpfile("tb_ov7670_sccb_master.vcd");
         $dumpvars(0, tb_ov7670_sccb_master);
 
         errors = 0;

@@ -1,10 +1,25 @@
 `timescale 1ns/1ps
 
 // ov7670_sccb_master
-// Purpose: perform one write-only OV7670 SCCB register transaction.
-// Clock domain: system/config clock, normally clk_100.
-// Ports: transaction handshake plus explicit SIOC/SIOD line-drive controls.
-// Assumption: dev_addr is the full 8-bit SCCB write address byte to transmit.
+//
+// Purpose:
+//   Perform one write-only OV7670 SCCB register transaction.
+//
+// Clock domain:
+//   System/config clock, normally clk_100.
+//
+// Inputs:
+//   start                 - one-cycle transaction request while idle
+//   dev_addr/reg_addr/data - bytes transmitted in that order
+//   siod_in               - observed SCCB data line for ACK sampling
+//
+// Outputs:
+//   busy/done/ack_error   - transaction status
+//   sioc                  - SCCB clock output
+//   siod_oe/siod_out      - explicit open-drain SIOD drive controls
+//
+// Assumption:
+//   dev_addr is the full 8-bit SCCB write address byte to transmit.
 module ov7670_sccb_master #(
     parameter integer SCCB_HALF_PERIOD_CLKS = 500
 ) (
@@ -54,6 +69,8 @@ module ov7670_sccb_master #(
     wire divider_running = (state != ST_IDLE) && (state != ST_DONE);
     wire sccb_tick = (clk_div == (SCCB_HALF_PERIOD_CLKS - 1));
 
+    // Half-period timing divider. The FSM changes SIOC/SIOD only on sccb_tick,
+    // making the SCCB waveform deterministic and easy to inspect in simulation.
     always @(posedge clk) begin
         if (rst) begin
             clk_div <= 32'd0;
@@ -66,6 +83,10 @@ module ov7670_sccb_master #(
         end
     end
 
+    // SCCB transaction state machine. It emits START, device byte, register
+    // byte, data byte, ACK checks after each byte, STOP, and a one-cycle done
+    // pulse. SIOD is released during ACK phases so the external target can
+    // pull the line low.
     always @(posedge clk) begin
         if (rst) begin
             state            <= ST_IDLE;
@@ -85,6 +106,8 @@ module ov7670_sccb_master #(
 
             case (state)
                 ST_IDLE: begin
+                    // Idle bus is released-high. A start request latches all
+                    // transaction fields before any bus activity begins.
                     busy      <= 1'b0;
                     ack_error <= 1'b0;
                     sioc      <= 1'b1;
@@ -105,6 +128,8 @@ module ov7670_sccb_master #(
                 end
 
                 ST_START_A: begin
+                    // Start condition setup: data remains high while clock is
+                    // high before the falling SIOD edge.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= 1'b1;
@@ -116,6 +141,8 @@ module ov7670_sccb_master #(
                 end
 
                 ST_START_B: begin
+                    // Start condition hold: SIOD is low while SIOC is still high,
+                    // then the clock is pulled low to begin bit transmission.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= 1'b0;
@@ -128,6 +155,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_DEV_LOW: begin
+                    // Drive the selected data bit while SIOC is low.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -139,6 +167,8 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_DEV_HIGH: begin
+                    // Hold the bit stable while SIOC is high. After bit zero,
+                    // release SIOD for the ACK phase.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -159,6 +189,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_DEV_ACK_LOW: begin
+                    // ACK setup for the device-address byte; FPGA releases SIOD.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -170,6 +201,8 @@ module ov7670_sccb_master #(
                 end
 
                 ST_DEV_ACK_HIGH: begin
+                    // Sample the target ACK while SIOC is high. A high SIOD
+                    // records an ACK error and jumps to a clean STOP sequence.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -193,6 +226,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_REG_LOW: begin
+                    // Drive the selected register-address bit while SIOC is low.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -204,6 +238,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_REG_HIGH: begin
+                    // Hold the register-address bit while SIOC is high.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -224,6 +259,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_REG_ACK_LOW: begin
+                    // ACK setup for the register-address byte.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -235,6 +271,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_REG_ACK_HIGH: begin
+                    // ACK sample after the register-address byte.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -258,6 +295,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_DATA_LOW: begin
+                    // Drive the selected register-data bit while SIOC is low.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -269,6 +307,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_SEND_DATA_HIGH: begin
+                    // Hold the register-data bit while SIOC is high.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= shift_reg[bit_idx];
@@ -289,6 +328,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_DATA_ACK_LOW: begin
+                    // ACK setup for the register-data byte.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -300,6 +340,8 @@ module ov7670_sccb_master #(
                 end
 
                 ST_DATA_ACK_HIGH: begin
+                    // Final ACK sample; the transaction continues to STOP even
+                    // when an ACK error is detected.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b0;
                     siod_out <= 1'b1;
@@ -318,6 +360,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_STOP_A: begin
+                    // Stop sequence begins with both SIOC and SIOD low.
                     sioc     <= 1'b0;
                     siod_oe  <= 1'b1;
                     siod_out <= 1'b0;
@@ -329,6 +372,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_STOP_B: begin
+                    // Raise SIOC while SIOD remains low.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= 1'b0;
@@ -340,6 +384,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_STOP_C: begin
+                    // Stop condition completes when SIOD rises while SIOC is high.
                     sioc     <= 1'b1;
                     siod_oe  <= 1'b1;
                     siod_out <= 1'b1;
@@ -350,6 +395,7 @@ module ov7670_sccb_master #(
                 end
 
                 ST_DONE: begin
+                    // Report transaction completion for one system-clock cycle.
                     busy     <= 1'b0;
                     done     <= 1'b1;
                     sioc     <= 1'b1;
